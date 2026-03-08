@@ -11,3 +11,10 @@ dist/
 build/
 .DS_Store
 sample/
+
+# Internal planning & documentation
+TODOLIST.md
+CLAUDE.md
+agents.md
+AI_Budtender_PRD_中文版.md
+PROJECT_PLAN_v1.md
