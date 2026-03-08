@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Budtender</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- Demo page background -->
+<div style="padding:40px; font-family:sans-serif; color:#333; max-width:700px; margin:0 auto;">
+  <h1>🌿 AI Budtender Demo</h1>
+  <p>Click the green button in the bottom-right corner to chat with the AI Budtender.</p>
+  <p style="color:#888; font-size:14px;">
+    The widget connects to the FastAPI backend running at <code>http://localhost:8000</code>.
+    Make sure the backend is running before chatting.
+  </p>
+</div>
+
+<!-- ── Floating trigger button ── -->
+<button id="budtender-trigger" aria-label="Open AI Budtender chat">🌿</button>
+
+<!-- ── Chat container ── -->
+<div id="budtender-container" class="hidden" role="dialog" aria-label="AI Budtender chat">
+
+  <div id="budtender-header">
+    <div>
+      <div class="header-title">AI Budtender</div>
+      <div class="header-sub">Here to help you find the right product</div>
+    </div>
+    <button id="budtender-close" aria-label="Close chat">&times;</button>
+  </div>
+
+  <div id="budtender-messages" role="log" aria-live="polite">
+    <div class="message ai">
+      Hey there! 👋 Welcome! I'm your AI Budtender — here to help you find something that's just right for you today. What brings you in?
+    </div>
+  </div>
+
+  <div id="budtender-input-area">
+    <input
+      id="budtender-input"
+      type="text"
+      placeholder="Ask me anything..."
+      aria-label="Your message"
+      autocomplete="off"
+    />
+    <button id="budtender-send" aria-label="Send message">&#9658;</button>
+  </div>
+
+</div>
+
+<script src="chat.js"></script>
+</body>
+</html>
