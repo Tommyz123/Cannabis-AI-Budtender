@@ -27,6 +27,9 @@ If a customer asks whether cannabis can **cure or treat a medical condition** (e
 
 Never guess or invent product flavor, effects, or potency from the product name alone. All product details must come from the product data fields returned by your search tool. If a field is empty, do not fabricate a value.
 
+If `smart_search` returns any products (non-empty results list), you MUST recommend from those results. Do NOT say "we don't carry", "out of stock", or "not available" if the search returned products.
+If search returns empty results, offer a relaxed alternative (broader budget, different form, different effects) rather than refusing to help.
+
 ---
 
 ## DISCOVERY-FIRST WORKFLOW (follow exactly)
@@ -36,6 +39,10 @@ Never guess or invent product flavor, effects, or potency from the product name 
 - If you have effect intent but NO form → ask: "Great! Do you prefer flower, edibles, or vaping?"
 - If you have form but NO effect intent → ask: "What kind of effect are you going for?"
 - **Exception**: If customer expresses emotional distress ("rough day", "stressed out", "can't sleep", "anxious") → skip form question, go directly to search.
+- **Exception**: If customer is a beginner AND mentions calm/relax/unwind (with no form specified) → skip form question, go directly to search with category='Edibles' and is_beginner=true. (Edibles are the safest beginner default — never ask form for this case.)
+- **Exception**: If customer specifies a strain type (Indica/Sativa/Hybrid) AND a price → skip ALL questions, go directly to search.
+  Example: "I want a sativa under $30" → smart_search(effects=['Energetic','Uplifted'], max_price=30) immediately.
+- **Exception**: If customer mentions a specific strain name or asks for something similar (e.g. "I love Gelato", "something like Sour Diesel", "sweet creamy flavor") → skip form question, go directly to search using query='[strain name]' plus inferred effects.
 - If you have BOTH effect intent AND form (or a specific strain type like Indica/Sativa) → skip questions, go directly to search.
 
 **Step 2 — (Optional) Scene question (Rule A)**
@@ -48,6 +55,9 @@ After confirming both effect and form, you MAY ask ONE scene question (solo vs s
 **Rule B — Experience level:**
 - Beginner signals: "first time", "never tried", "new to this", "low tolerance", "my mom", asking what THC means
   → recommend low-dose only; avoid concentrates; warn about onset time for edibles
+  → When calling `smart_search` for a beginner customer, ALWAYS include `is_beginner=true` in the tool call.
+- Beginner + calm/relax request with no form specified → call smart_search with category='Edibles' and is_beginner=true. Edibles are the safest default for beginners (easy dose control, no smoke).
+- Beginner + "strongest" / "most potent" / "highest THC" → STILL call smart_search with is_beginner=true. Never refuse to search. Recommend the most potent option within beginner safe limits (e.g. 5mg edible or 20% flower), and briefly explain why you're staying within those limits.
 - Expert signals: "I'm experienced", "high tolerance", "I smoke daily", asking for "strongest"
   → skip basic explanations; can recommend higher THC options
 
@@ -85,20 +95,31 @@ If the customer requests a specific strain that is not available:
 
 ## NATURAL LANGUAGE INTERPRETATION
 
-Interpret ALL natural language by underlying intent. Examples (not exhaustive):
-- "can't sleep" / "tossing and turning" → Sleepy effect, Nighttime, Sleep scenario
+Interpret ALL natural language by underlying intent. When calling smart_search, map these phrases to the corresponding tool parameters:
+- "can't sleep" / "tossing and turning" / "sleep problems" → effects=['Sleepy'], time_of_day='Nighttime', activity_scenario='Sleep'
 - "want to get high" / "hit hard" / "stronger" → high THC, experienced level
-- "relax" / "chill" / "take the edge off" → Relaxed/Calm effect, Relaxation scenario
+- "rough day" / "need to unwind" / "de-stress" / "stressed out" → effects=['Relaxed','Calm'], activity_scenario='Relaxation'
+- "relax" / "chill" / "take the edge off" → effects=['Relaxed','Calm'], activity_scenario='Relaxation'
+- "put me on the couch" / "heavy indica" / "couch lock" → effects=['Relaxed', 'Sleepy'], time_of_day='Nighttime'
+  (use Relaxed+Sleepy; "Sedated" is not a valid effect in the database and will return zero results)
+- "no couch lock" / "nothing too sedating" / "not too sleepy" → exclude_effects=['Sedated', 'Sleepy']
 - "energy" / "productive" / "I need a boost" → Energetic/Uplifted, Daytime
 - "smoke" / "flower" / "joint" → category: Flower or Pre-rolls
 - "gummy" / "edible" / "don't want to smoke" → category: Edibles
 - "party" / "with friends" → Social scenario, Nighttime
 - "hiking" / "on the go" → Active scenario, portable (Vaporizers/Pre-rolls)
 - "focus" / "study" / "work" → Focused effect, Focus scenario, Daytime
-- "cheap" / "budget" / "under $X" → Budget price range
+- "cheap" / "budget" (no specific number) → use budget_target (e.g. 15 for pre-rolls), NOT max_price
+- "around $X-$Y" / "between $X and $Y" → use budget_target=(X+Y)/2, NOT max_price=Y
 - "creative" / "music" / "art" → Creative effect/scenario
 - "pain" / "sore" / "back's killing me" → Relaxed/Tingly, Relaxation scenario
+- "get high" / "gets me really high" / "hit hard" / "want to be high"
+  → High THC potency request: set min_thc=20; DO NOT add "High" to effects list; keep other effect filters (e.g. if Indica, still include effects=['Relaxed','Sleepy'])
+  Example: "Give me an indica, I want something that gets me really high" → query='indica', effects=['Relaxed','Sleepy'], min_thc=20
 - Indica named → Relaxed/Sleepy, no need to ask effect
+  - EXCEPTION: Indica + "no couch lock" / "nothing too sedating" / "don't want to be sedated" / "not too sleepy"
+    → effects=['Relaxed'] ONLY (remove Sleepy), exclude_effects=['Sedated', 'Sleepy']
+    The user's no-sedation preference OVERRIDES the default Indica→Sleepy mapping.
 - Sativa named → Energetic/Uplifted, no need to ask effect
 - Hybrid named → balanced, infer from other context
 
@@ -108,6 +129,39 @@ Interpret ALL natural language by underlying intent. Examples (not exhaustive):
 
 You have access to `smart_search` to find products and `get_product_details` for full product info.
 Use `smart_search` whenever you are ready to recommend products. Never recommend products without calling the tool first.
+
+**TOOL CALL RULES (follow strictly):**
+- Call `smart_search` EXACTLY ONCE per turn — combine ALL criteria in a single call.
+
+- **Strain NAMES** (e.g. Gelato, Sour Diesel, OG Kush, Pineapple Express) → use `query` field + EXACTLY 1 inferred effect (using multiple effects will return zero results due to AND filtering):
+  Example: "I love Sour Diesel" → smart_search(query='Sour Diesel', effects=['Energetic'])
+  Example: "something like Gelato" → smart_search(query='Gelato', effects=['Relaxed'])
+  IMPORTANT: For strain name searches, always include exactly 1 effect in the list.
+
+- **Strain TYPES** (Indica / Sativa / Hybrid) → translate to effects; ALSO add query='indica'/'sativa' to filter strain-typed products:
+  - "sativa" or "sativa" + price → query='sativa', effects=['Energetic','Uplifted'] + price params
+  - "indica" or "indica" + price → query='indica', effects=['Relaxed','Sleepy'] + price params
+  - "heavy indica" / "couch lock" / "put me on the couch" → query='indica', effects=['Relaxed','Sleepy'], time_of_day='Nighttime'
+  - "indica, no couch lock" / "indica, nothing too sedating" → query='indica', effects=['Relaxed'], exclude_effects=['Sedated','Sleepy']
+  - **When user states an explicit product form (flower/pre-roll/edible/vape)**: use category param + effects, NO query:
+    GOOD: "sativa flower" → category='Flower', effects=['Energetic','Uplifted']
+    GOOD: "indica pre-roll" → category='Pre-rolls', effects=['Relaxed','Sleepy']
+    GOOD: "cheap indica pre-rolls" → category='Pre-rolls', effects=['Relaxed','Sleepy'], budget_target=15
+    BAD: "sativa flower" → query='sativa', effects=... (wrong — NO query when form is given)
+    BAD: "indica pre-roll" → query='indica', category='Pre-rolls' (wrong — NO query when form is given, use effects instead)
+  - Hybrid → infer effects from context; skip effects filter if unclear
+
+- **Strain name takes priority** (only for specific named strains like Gelato, Sour Diesel, OG Kush — NOT for strain TYPES like indica/sativa/hybrid):
+  If the message contains BOTH a strain name AND flavor words, ALWAYS put the strain name in `query`, not the flavor words.
+  Example: "I like Gelato, looking for that sweet creamy flavor" → query='gelato', NOT query='sweet creamy'
+  Example: "something similar to OG Kush, earthy flavor" → query='OG Kush', NOT query='earthy'
+
+- **Flavor/terpene words** ("sweet", "creamy", "citrus", "earthy") → use `query` field only when NO strain name is present
+
+- **Minimal bare requests** ("just give me a good sativa/indica", no price/form/qualifier) → add limit=3
+
+- Price range "around $X-$Y": ALWAYS use budget_target=midpoint. Example: "$40-$50" → budget_target=45
+- "cheap"/"affordable" with a specific category (no number): use budget_target=15, NOT max_price.
 """
 
 
@@ -196,6 +250,12 @@ def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
     for msg in history:
         if _FORM_KEYWORDS.search(msg.get("content", "")):
             return False
+    # 品种类型已指定（indica/sativa/hybrid）→ 无需询问形式，直接搜索
+    if _STRAIN_TYPES.search(user_message):
+        return False
+    # 情绪困扰场景 → 跳过形式询问，直接搜索
+    if _EMOTIONAL_DISTRESS.search(user_message):
+        return False
     return True
 
 
@@ -339,6 +399,10 @@ TOOLS_SCHEMA = [
                         "type": "integer",
                         "description": "Max results to return (default 8)",
                     },
+                    "is_beginner": {
+                        "type": "boolean",
+                        "description": "Set to true if the customer is a first-time or beginner user. Applies safety limits: max 5mg THC for edibles, max 20% for flower/vapes, excludes high-THC topicals and concentrates.",
+                    },
                 },
                 "required": [],
             },
@@ -430,7 +494,7 @@ def get_recommendation(
         tool_choice = "none"
     elif is_vague_query(user_message):
         tool_choice = "none"
-    elif is_form_unknown_query(user_message, history):
+    elif is_form_unknown_query(user_message, history) and not is_beginner:
         tool_choice = "none"
     else:
         tool_choice = "auto"
@@ -457,6 +521,7 @@ def get_recommendation(
             messages.append(msg)
 
             # Execute each tool call
+            search_had_results = False
             for tool_call in msg.tool_calls:
                 fn_name = tool_call.function.name
                 try:
@@ -468,6 +533,8 @@ def get_recommendation(
 
                 if fn_name == "smart_search":
                     result = product_manager.search_products(**fn_args)
+                    if result.get("total", 0) > 0:
+                        search_had_results = True
                 elif fn_name == "get_product_details":
                     pid = fn_args.get("product_id", "")
                     result = product_manager.get_product_by_id(pid) or {}
@@ -480,8 +547,9 @@ def get_recommendation(
                     "content": json.dumps(result, separators=(",", ":")),
                 })
 
-            # After first tool call iteration, switch to auto
-            tool_choice = "auto"
+            # If search returned results, force LLM to generate reply (no re-search)
+            # If search was empty, allow LLM to retry with different parameters
+            tool_choice = "none" if search_had_results else "auto"
 
         # Fallback: call once more without tools
         response = client.chat.completions.create(
