@@ -158,6 +158,7 @@ class ProductManager:
         activity_scenario: str | None = None,
         list_sub_types: bool = False,
         limit: int = 8,
+        is_beginner: bool = False,
         **_kwargs,
     ) -> dict:
         """
@@ -232,14 +233,19 @@ class ProductManager:
                 )
             ]
 
-        # 10. free-text query (Strain + Description + Feelings)
+        # 10. free-text query (Strain + Types + Feelings + Description)
         if query:
             desc_col = "Description" if "Description" in df.columns else None
             mask = df["Strain"].str.contains(query, case=False, na=False)
+            mask |= df["Types"].str.contains(query, case=False, na=False)
             mask |= df["Feelings"].str.contains(query, case=False, na=False)
             if desc_col:
                 mask |= df[desc_col].str.contains(query, case=False, na=False)
             df = df[mask]
+
+        # 11. Beginner safety filter
+        if is_beginner:
+            df = self._apply_beginner_filter(df, _BEGINNER_EXPERIENCE)
 
         # Limit results
         df = df.head(limit)

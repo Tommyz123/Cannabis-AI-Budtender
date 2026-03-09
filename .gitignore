@@ -12,6 +12,9 @@ build/
 .DS_Store
 sample/
 
+# Eval reports (auto-generated)
+reports/
+
 # Internal planning & documentation
 TODOLIST.md
 CLAUDE.md
