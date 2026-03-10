@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-03-06 | 项目阶段: Agent 架构重构完成
+最后更新: 2026-03-09 | 项目阶段: Size 搜索与展示支持已完成
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -41,7 +41,7 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `ProductManager.load(csv_path) → None` — 加载 CSV，建立索引
 - `ProductManager.get_all_compact_json() → str` — 全量产品 compact JSON
 - `ProductManager.get_beginner_compact_json() → str` — 新手安全过滤产品 JSON（含降级策略）
-- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_price, budget_target, time_of_day, activity_scenario, list_sub_types, limit) → dict` — 多条件产品搜索，供 tool calling 调用
+- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）
 - `ProductManager.get_product_by_id(product_id) → dict | None` — 按 ID 返回单个产品
 - `ProductManager.total_count → int` — 已加载产品数
 - `ProductManager.category_index → dict` — 品类 → DataFrame 映射

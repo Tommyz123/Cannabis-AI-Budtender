@@ -71,6 +71,12 @@ def _row_to_compact(row: pd.Series) -> dict:
     hw = row["HardwareType"]
     if not pd.isna(hw) and str(hw).strip():
         record["hw"] = str(hw)
+    wt = row["UnitWeight"]
+    if not pd.isna(wt) and str(wt).strip():
+        record["wt"] = str(wt)
+    pk = row["PackSize"]
+    if not pd.isna(pk) and str(pk).strip():
+        record["pk"] = str(int(pk))
     return record
 
 
@@ -156,6 +162,7 @@ class ProductManager:
         budget_target: float | None = None,
         time_of_day: str | None = None,
         activity_scenario: str | None = None,
+        unit_weight: str | None = None,
         list_sub_types: bool = False,
         limit: int = 8,
         is_beginner: bool = False,
@@ -233,12 +240,17 @@ class ProductManager:
                 )
             ]
 
-        # 10. free-text query (Strain + Types + Feelings + Description)
+        # 10. unit_weight filter
+        if unit_weight:
+            df = df[df["UnitWeight"].str.lower() == unit_weight.lower()]
+
+        # 11. free-text query (Strain + Types + Feelings + UnitWeight + Description)
         if query:
             desc_col = "Description" if "Description" in df.columns else None
             mask = df["Strain"].str.contains(query, case=False, na=False)
             mask |= df["Types"].str.contains(query, case=False, na=False)
             mask |= df["Feelings"].str.contains(query, case=False, na=False)
+            mask |= df["UnitWeight"].str.contains(query, case=False, na=False)
             if desc_col:
                 mask |= df[desc_col].str.contains(query, case=False, na=False)
             df = df[mask]

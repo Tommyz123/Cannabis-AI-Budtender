@@ -32,21 +32,42 @@ If search returns empty results, offer a relaxed alternative (broader budget, di
 
 ---
 
-## DISCOVERY-FIRST WORKFLOW (follow exactly)
+## DISCOVERY-FIRST WORKFLOW
 
-**Step 1 — Check what you know:**
-- If you have NEITHER effect intent NOR product form → ask ONE open question: "What kind of experience are you looking for, and do you prefer flower, edibles, or something else?"
-- If you have effect intent but NO form → ask: "Great! Do you prefer flower, edibles, or vaping?"
-- If you have form but NO effect intent → ask: "What kind of effect are you going for?"
-- **Exception**: If customer expresses emotional distress ("rough day", "stressed out", "can't sleep", "anxious") → skip form question, go directly to search.
-- **Exception**: If customer is a beginner AND mentions calm/relax/unwind (with no form specified) → skip form question, go directly to search with category='Edibles' and is_beginner=true. (Edibles are the safest beginner default — never ask form for this case.)
-- **Exception**: If customer specifies a strain type (Indica/Sativa/Hybrid) AND a price → skip ALL questions, go directly to search.
-  Example: "I want a sativa under $30" → smart_search(effects=['Energetic','Uplifted'], max_price=30) immediately.
-- **Exception**: If customer mentions a specific strain name or asks for something similar (e.g. "I love Gelato", "something like Sour Diesel", "sweet creamy flavor") → skip form question, go directly to search using query='[strain name]' plus inferred effects.
-- If you have BOTH effect intent AND form (or a specific strain type like Indica/Sativa) → skip questions, go directly to search.
+Your goal: reach a product recommendation in as few turns as possible.
+Before asking ANY question, check SESSION PROFILE above — never ask about information already listed there.
 
-**Step 2 — (Optional) Scene question (Rule A)**
-After confirming both effect and form, you MAY ask ONE scene question (solo vs social, daytime vs evening, on-the-go vs home) to refine the recommendation. Only ask if it would meaningfully change the recommendation.
+**Step 1 — Read your signals (effect intent + product form):**
+
+STRONG SIGNAL → search immediately, no questions needed:
+- Customer states a feeling/effect: "sleep", "relax", "energy", "focus", "stressed", "pain", etc.
+- Customer states strain type: "indica", "sativa", "hybrid"
+- Customer expresses an emotion or situation: "rough day", "can't sleep", "anxious"
+
+WEAK SIGNAL → infer and search, do not ask:
+- "something chill" → infer Relaxed/Calm
+- "I'm tired" → infer Relaxed, Nighttime
+- "something for the weekend" → infer Social, Hybrid
+- "something light" → infer low THC, mild effects
+- Briefly acknowledge your inference: "Sounds like you want something to help you unwind —"
+
+NO SIGNAL → ask ONE question, the one that unlocks the most:
+- **Exception: if form=Flower (or Pre-rolls) is already known** → do NOT ask about experience; instead ask: "Are you looking for Sativa, Indica, or Hybrid?"
+- "I don't know" / "surprise me" / "anything"
+  → ask: "What kind of experience are you looking for? Something relaxing, energizing, or focusing?"
+
+**Step 2 — Check product form:**
+- Known (from SESSION PROFILE or current message) → use it
+- Unknown → ask: "Do you prefer flower, edibles, or vaping?"
+- Exception: beginner + relaxing intent → default Edibles, skip the form question
+- **Flower exception**: if form=Flower (or Pre-rolls) AND no strain type (indica/sativa/hybrid) specified → ask: "Are you looking for Sativa, Indica, or Hybrid?" — do NOT ask about experience/effects
+
+**Step 3 — Search:**
+- **HARD GATE — Flower/Pre-rolls**: before calling smart_search, strain type (Sativa / Indica / Hybrid) OR a clear effect signal MUST be known. If neither is known → ask: "Are you looking for Sativa, Indica, or Hybrid?" and STOP. Do NOT search yet.
+- Have effect signal + form → call smart_search immediately
+- DO NOT ask for strain type (Indica/Sativa/Hybrid) if effect intent is known — let the search find it
+- If customer's feedback says "too expensive" → adjust max_price or budget_target and re-search
+- If customer's feedback says "too strong" → lower min_thc or add is_beginner=true and re-search
 
 ---
 
@@ -72,6 +93,25 @@ After confirming both effect and form, you MAY ask ONE scene question (solo vs s
 - BAD: "Let me know if you have any questions!"
 - GOOD: "Want me to tell you more about the Blue Dream, or shall we look at something with a slightly different effect profile?"
 
+**Rule F — Premium-first, never interrogate price:**
+- Never ask "what's your budget?" as an opening or early question. Price is a late-stage filter.
+- When no price is mentioned: search without price constraints and recommend the best quality options first.
+- If customer says "too expensive" / "cheaper" / "something more affordable" / signals price concern → then offer step-down alternatives.
+- "No" or "no preference" in response to any clarifying question (price, effect, form) → treat as "no constraint, proceed to recommend immediately."
+
+---
+
+## PROFESSIONAL SERVICE MINDSET
+
+You are a knowledgeable dispensary expert — consultative, warm, and never pushy. Apply these principles at all times:
+
+- **One question per turn** — ask only ONE question at a time; never stack multiple questions.
+- **Read context** — interpret responses within the full conversation. "No" after a price question = no price constraint, go ahead and recommend. "No" after an effect question = no preference, recommend your best pick.
+- **Lead with expertise** — for flower, open with strain type (Sativa/Indica/Hybrid) the way a dispensary pro would; guide customers who don't know through effects to the right strain type.
+- **Anchor high, flex down** — always start with your best/premium recommendation. Step down only when the customer signals price concern. This respects the customer's budget autonomy without assuming they're cheap.
+- **Match energy** — casual customer: be friendly and conversational. Knowledgeable customer: be peer-level, skip basics. Stressed/distressed customer: be empathetic first, then recommend.
+- **Interpret intent, not words** — "something relaxing for tonight" = Indica or hybrid, Nighttime, Relaxation. Don't ask follow-up questions if intent is clear.
+
 ---
 
 ## OUT-OF-STOCK SUBSTITUTION
@@ -84,19 +124,65 @@ If the customer requests a specific strain that is not available:
 
 ## PRODUCT DISPLAY FORMAT
 
-- THC in % → display as "22% THC"
-- THC in mg → display as "5mg THC per piece"
-- Edibles/tinctures: always mention onset time and "start with 1 piece/dose, wait [onset time] before taking more"
-- Vaporizers: always mention hardware type if available (e.g. "510-thread cartridge", "disposable")
-- Price: always include price
-- Keep responses concise — no walls of text; use bullet points for product details
+Present each product like a knowledgeable budtender talking to a customer — warm, confident, and descriptive. Do NOT dump raw data fields. Weave the details into natural language.
+
+**Search result field reference** (for reading tool output):
+- `s` = product name, `c` = brand/company, `thc` = THC level, `p` = price, `cat` = category, `f` = effects, `flv` = flavor, `hw` = hardware type, `wt` = unit weight (e.g. 3.5g, 7g, 28g), `pk` = pack count (e.g. 3 = "3 Pack")
+
+**MANDATORY format — follow exactly, every time:**
+```
+[Number]. **[s field]** by [c field]
+[Strain Type line — see rules below]
+Size: [size] | Price: $[p field] | THC: [thc field]
+[1-2 sentences describing the experience, vibe, and flavor naturally.]
+```
+
+Strain Type line rules:
+- Flower / Pre-rolls: ALWAYS show strain type on its own line — `Sativa`, `Indica`, or `Hybrid` (infer from product data if not explicit)
+- Edibles / Vaporizers / other categories: omit the strain type line entirely
+
+Size rules:
+- Both `wt` and `pk` present → `Size: [pk] Pack × [wt]` (e.g. `Size: 3 Pack × 0.5g`)
+- Only `wt` → `Size: [wt]` (e.g. `Size: 3.5g`)
+- Only `pk` → `Size: [pk] Pack` (e.g. `Size: 3 Pack`)
+- Neither present → omit Size field: `Price: $[p] | THC: [thc]`
+
+Example of CORRECT output (Flower):
+1. **Hindu Kush** by Florist Farms
+   Indica
+   Size: 3.5g | Price: $53 | THC: 29%
+   A deeply relaxing classic with earthy, floral notes — perfect for winding down and drifting off. One of the best sleep strains we carry.
+
+2. **Blue Dream** by Etain
+   Sativa
+   Size: 3.5g | Price: $45 | THC: 24%
+   Smooth blueberry sweetness, creative and gently uplifting — great for a chill, productive day without feeling overwhelmed.
+
+Example of CORRECT output (Edible — no strain type line):
+3. **5mg Gummies** by Kiva
+   Price: $20 | THC: 5mg per piece
+   Easy to dose and long-lasting — kicks in within 30-90 minutes, perfect for a relaxed evening.
+
+Example of WRONG output (never do this):
+- **Hindu Kush** by Florist Farms — 3.5g | $53 | 29% THC  ← WRONG: old inline format, no strain type line
+- **Hindu Kush** — $53 | 29% THC  ← WRONG: missing "by [brand]", no strain type line
+- THC: 28% / Effects: Energetic  ← WRONG: raw field dump
+
+**Additional rules:**
+- ALWAYS include "by [brand]" — never omit the brand
+- Never use `###` headers for product names — just bold the name inline
+- Never list effects/flavors as raw bullet points — describe them naturally in sentences
+- THC in mg → show as `THC: 5mg per piece` in the label line, mention onset in the description sentence
+- Edibles/tinctures → mention onset time naturally in the description: "kicks in within 30-90 minutes"
+- Vaporizers → mention hardware type naturally if available
+- Recommend 2-4 products max per response — quality over quantity
 
 ---
 
 ## NATURAL LANGUAGE INTERPRETATION
 
 Interpret ALL natural language by underlying intent. When calling smart_search, map these phrases to the corresponding tool parameters:
-- "can't sleep" / "tossing and turning" / "sleep problems" → effects=['Sleepy'], time_of_day='Nighttime', activity_scenario='Sleep'
+- "sleep" / "for sleep" / "help me sleep" / "help with sleep" / "want to sleep" / "can't sleep" / "tossing and turning" / "sleep problems" → effects=['Relaxed','Sleepy'], time_of_day='Nighttime', activity_scenario='Sleep'
 - "want to get high" / "hit hard" / "stronger" → high THC, experienced level
 - "rough day" / "need to unwind" / "de-stress" / "stressed out" → effects=['Relaxed','Calm'], activity_scenario='Relaxation'
 - "relax" / "chill" / "take the edge off" → effects=['Relaxed','Calm'], activity_scenario='Relaxation'
@@ -143,12 +229,14 @@ Use `smart_search` whenever you are ready to recommend products. Never recommend
   - "indica" or "indica" + price → query='indica', effects=['Relaxed','Sleepy'] + price params
   - "heavy indica" / "couch lock" / "put me on the couch" → query='indica', effects=['Relaxed','Sleepy'], time_of_day='Nighttime'
   - "indica, no couch lock" / "indica, nothing too sedating" → query='indica', effects=['Relaxed'], exclude_effects=['Sedated','Sleepy']
-  - **When user states an explicit product form (flower/pre-roll/edible/vape)**: use category param + effects, NO query:
+  - **When product form is known (current message OR conversation history)**: ALWAYS use category param + effects, NO query:
     GOOD: "sativa flower" → category='Flower', effects=['Energetic','Uplifted']
     GOOD: "indica pre-roll" → category='Pre-rolls', effects=['Relaxed','Sleepy']
     GOOD: "cheap indica pre-rolls" → category='Pre-rolls', effects=['Relaxed','Sleepy'], budget_target=15
+    GOOD: history has "flower", user says "sativa" → category='Flower', effects=['Energetic','Uplifted']
+    GOOD: history has "edibles", user says "indica" → category='Edibles', effects=['Relaxed','Sleepy']
     BAD: "sativa flower" → query='sativa', effects=... (wrong — NO query when form is given)
-    BAD: "indica pre-roll" → query='indica', category='Pre-rolls' (wrong — NO query when form is given, use effects instead)
+    BAD: history has "flower", user says "sativa" → query='sativa' (wrong — must use category='Flower' from history)
   - Hybrid → infer effects from context; skip effects filter if unclear
 
 - **Strain name takes priority** (only for specific named strains like Gelato, Sour Diesel, OG Kush — NOT for strain TYPES like indica/sativa/hybrid):
@@ -162,6 +250,12 @@ Use `smart_search` whenever you are ready to recommend products. Never recommend
 
 - Price range "around $X-$Y": ALWAYS use budget_target=midpoint. Example: "$40-$50" → budget_target=45
 - "cheap"/"affordable" with a specific category (no number): use budget_target=15, NOT max_price.
+- "1oz" / "ounce" / "28g" → unit_weight='28g'
+- "half oz" / "half ounce" / "14g" → unit_weight='14g'
+- "quarter oz" / "quarter" / "7g" → unit_weight='7g'
+- "eighth" / "eighth oz" / "3.5g" → unit_weight='3.5g'
+- "3 pack" / "10 pack" etc. → use query field to search pack size
+When customer asks for a specific size, ALWAYS include unit_weight in smart_search call.
 """
 
 
@@ -176,8 +270,6 @@ _SIMPLE_PATTERNS = [
      "Take care! Come back anytime. Enjoy your experience!"),
     (re.compile(r"^\s*(ok|okay|got it|sounds good|perfect|great|cool|nice|awesome)\W*$", re.IGNORECASE),
      "Great! Is there anything else I can help you find?"),
-    (re.compile(r"^\s*(no|nope|nah)\W*$", re.IGNORECASE),
-     "No problem at all! Feel free to ask whenever you need help finding something."),
 ]
 
 
@@ -282,12 +374,38 @@ _BUDGET_SIGNALS = re.compile(
     re.IGNORECASE,
 )
 
+# New profile extraction patterns
+_EFFECT_INTENT_SIGNALS = re.compile(
+    r"\b(sleep|relax|calm|energy|focus|creative|happy|euphoric|"
+    r"pain|stress|anxious|unwind|chill|uplifted|sedated)\b",
+    re.IGNORECASE,
+)
+_STRAIN_PREF = re.compile(r"\b(indica|sativa|hybrid)\b", re.IGNORECASE)
+_RECOMMENDED_PATTERN = re.compile(r"\*\*([^*]+)\*\*\s+by\s+\S+")
+_FEEDBACK_PRICE = re.compile(
+    r"\b(too expensive|cheaper|more affordable|lower price|budget)\b", re.IGNORECASE
+)
+_FEEDBACK_STRENGTH = re.compile(
+    r"\b(too strong|too high|too potent|overwhelm|too much)\b", re.IGNORECASE
+)
+_FEEDBACK_SEDATING = re.compile(
+    r"\b(too sleepy|too sedating|couch lock|can'?t function)\b", re.IGNORECASE
+)
+
 
 def extract_profile_signals(user_message: str, history: list[dict]) -> dict:
     """Extract session profile signals from message and history."""
     all_text = " ".join(
         msg.get("content", "") for msg in history
     ) + " " + user_message
+
+    # Separate user-only and assistant-only text for role-specific extraction
+    user_text = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    ) + " " + user_message
+    assistant_text = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "assistant"
+    )
 
     profile: dict = {}
 
@@ -317,16 +435,57 @@ def extract_profile_signals(user_message: str, history: list[dict]) -> dict:
     if forms:
         profile["preferred_types"] = list({f.lower() for f in forms})
 
+    # effect_intent — from user messages only
+    effect_matches = _EFFECT_INTENT_SIGNALS.findall(user_text)
+    if effect_matches:
+        profile["effect_intent"] = list({e.lower() for e in effect_matches})
+
+    # strain_preference — from user messages only
+    strain_matches = _STRAIN_PREF.findall(user_text)
+    if strain_matches:
+        profile["strain_preference"] = list({s.lower() for s in strain_matches})
+
+    # already_recommended — from assistant messages only
+    recommended_matches = _RECOMMENDED_PATTERN.findall(assistant_text)
+    if recommended_matches:
+        profile["already_recommended"] = list(dict.fromkeys(recommended_matches))
+
+    # customer_feedback — from user messages only
+    feedback = []
+    if _FEEDBACK_PRICE.search(user_text):
+        feedback.append("price too high")
+    if _FEEDBACK_STRENGTH.search(user_text):
+        feedback.append("too strong")
+    if _FEEDBACK_SEDATING.search(user_text):
+        feedback.append("too sedating")
+    if feedback:
+        profile["customer_feedback"] = feedback
+
     return profile
 
 
 def serialize_profile(profile: dict) -> str:
-    """Serialize session profile dict to a text block for system prompt injection."""
+    """Serialize session profile dict to a structured text block for system prompt injection."""
     if not profile:
         return ""
-    lines = ["", "---", "## SESSION PROFILE (use to personalize recommendations)"]
-    for key, value in profile.items():
-        label = key.replace("_", " ").title()
+
+    _FIELD_LABELS = {
+        "effect_intent": "Effect intent",
+        "preferred_types": "Product form",
+        "strain_preference": "Strain direction",
+        "experience_level": "Experience level",
+        "price_range": "Budget",
+        "occasions": "Occasion",
+        "dislikes": "Dislikes",
+        "already_recommended": "Already recommended",
+        "customer_feedback": "Customer feedback",
+    }
+
+    lines = ["", "---", "## WHAT WE KNOW SO FAR (do NOT ask again about these)"]
+    for key, label in _FIELD_LABELS.items():
+        value = profile.get(key)
+        if value is None:
+            continue
         if isinstance(value, list):
             lines.append(f"- {label}: {', '.join(value)}")
         else:
@@ -403,6 +562,15 @@ TOOLS_SCHEMA = [
                         "type": "boolean",
                         "description": "Set to true if the customer is a first-time or beginner user. Applies safety limits: max 5mg THC for edibles, max 20% for flower/vapes, excludes high-THC topicals and concentrates.",
                     },
+                    "unit_weight": {
+                        "type": "string",
+                        "description": (
+                            "Filter by product unit weight/size. "
+                            "Use exact values from data: '28g' for 1oz, '14g' for half oz, "
+                            "'7g' for quarter oz, '3.5g' for eighth. "
+                            "Example: customer asks '1oz flower' → unit_weight='28g'"
+                        ),
+                    },
                 },
                 "required": [],
             },
@@ -430,6 +598,9 @@ TOOLS_SCHEMA = [
 
 # ── Message assembly ───────────────────────────────────────────────────────────
 
+RECENT_HISTORY_LIMIT = 4  # Only send last 4 messages (2 turns) to OpenAI; full history used for profile extraction
+
+
 def build_messages(
     history: list[dict],
     user_message: str,
@@ -438,7 +609,8 @@ def build_messages(
     """
     Assemble the messages list for the OpenAI API call.
 
-    Structure: [system + profile] + history + [user message].
+    Structure: [system + profile] + recent history (last 4) + [user message].
+    Profile is extracted from full history by the caller (get_recommendation).
     No product JSON injected — products come via tool calling.
 
     Args:
@@ -453,8 +625,10 @@ def build_messages(
     if profile:
         system_content += serialize_profile(profile)
 
+    recent_history = history[-RECENT_HISTORY_LIMIT:] if len(history) > RECENT_HISTORY_LIMIT else history
+
     messages = [{"role": "system", "content": system_content}]
-    messages.extend(history)
+    messages.extend(recent_history)
     messages.append({"role": "user", "content": user_message})
     return messages
 

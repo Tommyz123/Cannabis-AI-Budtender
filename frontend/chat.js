@@ -96,7 +96,7 @@ async function callChatAPI(userMessage) {
   const payload = {
     session_id: sessionId,
     messages: conversationHistory,
-    is_beginner: isBeginner,
+    is_beginner: false,
     user_message: userMessage,
   };
 
@@ -116,10 +116,23 @@ async function callChatAPI(userMessage) {
 
 // ── DOM helpers ───────────────────────────────────────────────────────────────
 
+function renderMarkdown(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
+
 function appendMessage(role, text) {
   const el = document.createElement("div");
   el.className = `message ${role}`;
-  el.textContent = text;
+  if (role === "ai") {
+    el.innerHTML = renderMarkdown(text);
+  } else {
+    el.textContent = text;
+  }
   messagesEl.appendChild(el);
   scrollToBottom();
 }

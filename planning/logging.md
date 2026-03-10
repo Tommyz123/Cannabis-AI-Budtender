@@ -3,6 +3,83 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-09] 优化 | 产品推荐格式 — 品种类型单独行 + 标签化字段
+
+**变更内容：**
+- `SYSTEM_PROMPT` MANDATORY format 更新：Flower/Pre-rolls 品种类型（Sativa/Indica/Hybrid）单独一行显示
+- Size / Price / THC 改为标签格式：`Size: 28g | Price: $270 | THC: 29%`
+- Edibles / Vaporizers 不显示 strain type 行
+- 更新示例（CORRECT / WRONG）
+
+**涉及文件：** `backend/llm_service.py`（SYSTEM_PROMPT MANDATORY format 段落）
+
+**测试结果：** 待手动验证
+
+---
+
+## [2026-03-09] 修复 | Flower 类目询问策略 — 问品种类型而非效果
+
+**变更内容：**
+- `SYSTEM_PROMPT` DISCOVERY-FIRST WORKFLOW Step 2 末尾新增 Flower exception 规则：form=Flower（或 Pre-rolls）且无品种类型（indica/sativa/hybrid）→ 问 "Are you looking for Sativa, Indica, or Hybrid?"，禁止问体验/效果
+- 解决用户说 "do you have 1oz flower" 时 AI 错误走 NO SIGNAL 分支、询问体验的问题
+
+**涉及文件：** `backend/llm_service.py`（SYSTEM_PROMPT Step 2）
+
+**测试结果：** 待手动验证
+
+---
+
+## [2026-03-09] 新增 | 产品 Size 展示与搜索支持
+
+**变更内容：**
+1. `_row_to_compact()` 新增 `wt`（UnitWeight）和 `pk`（PackSize）可选字段
+2. `search_products()` 新增 `unit_weight` 参数，支持精确匹配过滤；free-text query 新增 UnitWeight 列搜索
+3. `TOOLS_SCHEMA` 新增 `unit_weight` 参数（含 oz → g 映射说明）
+4. `SYSTEM_PROMPT` 字段说明补充 `wt`/`pk`；展示格式加入 size（含 wt/pk 组合规则）；NATURAL LANGUAGE INTERPRETATION 新增 1oz/half oz/quarter/eighth 映射规则
+
+**涉及文件：** `backend/product_manager.py`、`backend/llm_service.py`
+
+**测试结果：** 50/50 passed（pytest tests/ -v）
+
+## [2026-03-09] 优化 | 修复品牌未展示 + 修复 effect intent 多余询问问题
+
+- **变更内容**：
+  1. 产品展示格式强化：明确 MANDATORY 标签，加入 CORRECT/WRONG 对比示例，强制"by [brand]"不可省略
+  2. 字段说明补充：`c` = brand/company，解决 LLM 不识别字段的问题
+  3. Discovery-First：flower + effect intent 已明确时（如 sleep/relax/energy），直接用 effect 搜索，跳过 strain type 询问；strain type 只在无任何 effect intent 时才问
+  4. 自然语言映射：扩展 sleep 关键词覆盖，移除硬编码 query='indica'，让系统通过 effect 自然找到对应产品
+- **涉及文件**：`backend/llm_service.py`
+- **测试结果**：待测试
+
+## [2026-03-09] 优化 | 产品展示加入品牌信息
+
+- **变更内容**：`backend/llm_service.py` 产品展示格式加入品牌（Company 字段），格式改为 `**产品名** by 品牌 — $价格 | THC%`；同时新增字段索引说明，告知 LLM 搜索结果中 `c` = 品牌/公司名
+- **涉及文件**：`backend/llm_service.py`
+- **测试结果**：待测试
+
+## [2026-03-09] 优化 | 产品推荐格式与展示逻辑升级
+
+**变更内容：**
+- `backend/llm_service.py` — System Prompt 多处升级：
+  - Discovery-First：Flower/Pre-rolls 专业入口改为先问 strain type（Sativa/Indica/Hybrid），而非 effect
+  - 新增 Rule F：Premium-first，不主动询问预算，先推优质选项，客户表示价格顾虑才降档
+  - 新增 PROFESSIONAL SERVICE MINDSET 区块：单问原则、读上下文、高锚点、匹配客户能量、解读意图
+  - 产品展示格式重写：从原始字段罗列改为自然语言描述（Good/Bad 示例），限制 2-4 个推荐
+  - Tool call 规则更新：category 参数从当前消息或历史对话中读取 product form（非仅当前消息）
+  - 移除 "no/nope/nah" 简单快路径（改由 LLM 根据上下文智能处理）
+- `frontend/chat.js` — 前端渲染升级：
+  - 新增 `renderMarkdown()` 函数，支持 `**bold**` → `<strong>` 和换行 → `<br>` 转换
+  - AI 消息改用 `innerHTML` 渲染，用户消息仍用 `textContent`（安全隔离）
+
+**涉及文件：** `backend/llm_service.py`, `frontend/chat.js`
+**测试结果：** 待测试
+
+## [2026-03-09] 修复 | 修复前端 isBeginner 未定义导致聊天报错
+
+- **变更内容**：`frontend/chat.js` 第 99 行，将 `is_beginner: isBeginner` 改为 `is_beginner: false`。2026-03-06 重构时移除了 `isBeginner` 变量定义，但未同步清理引用，导致前端报 `ReferenceError: isBeginner is not defined`，所有 /chat 请求失败。新手判断逻辑由后端 LLM 通过对话自动识别，前端无需追踪。
+- **涉及文件**：`frontend/chat.js`
+- **测试结果**：前端发送消息正常，后端返回 AI 回复，连接验证通过
+
 ## [2026-03-06] 重构 | Agent 架构重构 + System Prompt 全面升级
 
 **变更内容：**
