@@ -259,6 +259,20 @@ class ProductManager:
         if is_beginner:
             df = self._apply_beginner_filter(df, _BEGINNER_EXPERIENCE)
 
+        # Sort: larger unit weight first, then by price descending (premium first)
+        def _parse_weight(wt):
+            """Extract numeric value from weight string like '1g', '0.5g', '2g'."""
+            try:
+                return float(str(wt).replace('g', '').strip())
+            except (ValueError, TypeError):
+                return 0.0
+
+        if not df.empty and "UnitWeight" in df.columns:
+            df = df.copy()
+            df["_weight_num"] = df["UnitWeight"].apply(_parse_weight)
+            df = df.sort_values(["_weight_num", "Price"], ascending=[False, False])
+            df = df.drop(columns=["_weight_num"])
+
         # Limit results
         df = df.head(limit)
 

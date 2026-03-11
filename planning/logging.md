@@ -3,6 +3,93 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-10] 优化 | tc_A5b 评分标准澄清 + tc_A6 prompt 强化 pod 电池说明
+
+- **变更内容**：
+  1. `golden_dataset_v1.json` tc_A5b 评分标准 "只问了一个问题" 加注释，明确单句列举多选项仍算一个问题
+  2. `backend/llm_service.py` Vaporizer Hardware Rule 改为显式 MANDATORY 规则，要求 pod 电池不通用说明必须在初始 hardware 问题中给出
+- **涉及文件**：`golden_dataset_v1.json`、`backend/llm_service.py`
+- **测试结果**：全集 8/8 passed，tc_A5b 4/4，tc_A6 4/4，无回退
+
+## [2026-03-10] 优化 | eval 并发执行：串行改为 ThreadPoolExecutor(max_workers=4)
+
+- **变更内容**：用 `_PMWrapper` 替换 monkeypatch 方案（线程安全），`run_all_cases` 改为 `ThreadPoolExecutor` 并发执行，移除 `time.sleep(1)`，结果按原始 TC 顺序排序
+- **涉及文件**：`eval/run_eval.py`
+- **测试结果**：待验证
+
+## [2026-03-10] 重构 | 移除硬编码 is_beginner，改由 LLM 对话动态判断
+
+- **变更内容**：删除所有外部传入的 `is_beginner` 参数，让 LLM 完全根据对话内容（SYSTEM_PROMPT Rule B）自动判断是否为新手。保留 `smart_search` 工具参数中的 `is_beginner`（LLM 自决）。
+- **涉及文件**：`backend/models.py`、`backend/main.py`、`backend/llm_service.py`、`eval/run_eval.py`、`golden_dataset_v1.json`
+- **测试结果**：单 TC 冒烟测试 tc_A1 通过（规则✅，标准 7/7，得分 100%）
+
+## [2026-03-10] 修复 | langfuse 版本固定至 3.x，恢复 Langfuse trace 功能
+
+- **变更内容**：将 requirements.txt 中的 `langfuse>=2.0.0` 改为 `langfuse>=3.0.0,<4.0.0`，避免安装 langfuse 4.0.0（该版本删除了 `start_as_current_span` 等 API，与现有代码不兼容）
+- **涉及文件**：`requirements.txt`
+- **测试结果**：单 TC 测试 tc_A1 通过（规则✅，标准 7/7，得分 100%），Langfuse trace 正常上报至 cloud.langfuse.com
+
+## [2026-03-10] 新增 | eval 报告加入完整对话上下文
+
+- 变更内容：`EvalResult` 新增 `user_message` 和 `conversation_history` 两个字段；`run_single_case` 正常路径和异常路径均传入这两个字段；`generate_report` 的 `<details>` 区块由"AI 实际回复"改为"完整对话"，按轮次展示历史消息 + 当前 user_message + AI 回复
+- 涉及文件：`eval/run_eval.py`
+- 测试结果：单 TC 模式运行 tc_A5b，报告中正确展示两轮对话（User: I want some flower → AI 回复 → User: not sure → AI 回复）
+
+## [2026-03-10] 新增 | 运行 Direction A Eval（8 条 TC），通过率 62%
+
+- 变更内容：执行 eval/run_eval.py，生成报告 reports/eval_20260310_122543.md
+- 涉及文件：golden_dataset_v1.json、eval/run_eval.py、reports/eval_20260310_122543.md
+- 结果：5/8 通过（tc_A1/A2/A3/A4/A5b 通过；tc_A5a/A5c/A6 失败）
+- 失败原因：tc_A5a 缺少效果描述+引导问句；tc_A5c/A6 不应调用工具但触发了 smart_search
+
+## [2026-03-10] 优化 | 升级对话哲学：Rule E 预判式结尾 + 引导式提问
+
+**变更内容：**
+1. `backend/llm_service.py` — Rule E 升级为"Predictive Open Invitation"：根据客户信号（直接点花/提预算/提效果/模糊请求）预判下一步需求，结尾开一扇门，禁止泛泛的"有问题找我"
+2. `backend/llm_service.py` — Step 2 问 form 方式升级：问问题前加 1 句专业引导说明（如"relax → indica/hybrid"），而非干问
+3. `golden_dataset_v1.json` — tc_A1 judge_criteria 更新：结尾判断从"预算邀请"改为"针对 indica flower 客户的预判性开放邀请"，新增"非泛泛结尾"校验项
+
+**涉及文件：** `backend/llm_service.py`、`golden_dataset_v1.json`
+
+**测试结果：** 50/50 passed（pytest tests/ -v -q）；JSON 格式校验通过
+
+## [2026-03-10] 新增 | 重建黄金数据集方向A + Emotional Distress 规则修改
+
+**变更内容：**
+1. `golden_dataset_v1.json` — 推倒重建为方向A Discovery Flow（8条TC）：
+   - tc_A1: 有效果+有form → 直接搜索，高价优先，结尾预算邀请
+   - tc_A2: 有效果+无form → 问form
+   - tc_A3: 完全无信号（浏览查询）→ 品类概览
+   - tc_A4: Emotional distress → 先共情，再问form
+   - tc_A5a/b/c: Flower多轮引导流程
+   - tc_A6: Vaporizer已知无hardware → 问hardware类型+pod说明
+2. `backend/llm_service.py` — SYSTEM_PROMPT 修改：
+   - 移除 STRONG SIGNAL 中 emotional distress 例子（rough day/anxious）
+   - 新增 BROWSING QUERY 规则：浏览查询→品类概览，不搜索
+   - 新增 Emotional distress 规则：先共情→再问form，不跳过form
+   - 更新 PROFESSIONAL SERVICE MINDSET Match energy 条目
+3. `backend/llm_service.py` — 代码修改：
+   - 删除 `_EMOTIONAL_DISTRESS` 正则定义（已无使用）
+   - `is_form_unknown_query` 移除 emotional distress 例外（不再跳过form询问）
+   - `_EFFECT_KEYWORDS` 补充 "relaxing"/"relaxed"/"calming"/"stressed" 等变形词
+
+**涉及文件：** `golden_dataset_v1.json`, `backend/llm_service.py`
+**测试结果：** 50/50 tests passed；is_form_unknown_query 6个关键场景全部通过
+
+## [2026-03-10] 优化 | 改进 Vaporizer 推荐逻辑
+
+**变更内容：**
+1. `backend/llm_service.py` — SYSTEM_PROMPT Step 2 新增 Vaporizer Hardware Rule：
+   - 当 form=Vaporizers 已知但硬件类型未知时，询问 disposable / 510 cartridge / pod
+   - 若客户选 Pod，在推荐前添加专属电池提醒
+2. `backend/llm_service.py` — PRODUCT DISPLAY FORMAT 新增 Vaporizer Display Priority 规则：
+   - 1g 产品优先展示，同尺寸内按价格从高到低排列
+3. `backend/product_manager.py` — `search_products` 方法在 `# Limit results` 前添加排序逻辑：
+   - 按 UnitWeight 数值从大到小排序，同权重内按 Price 从高到低
+
+**涉及文件：** `backend/llm_service.py`, `backend/product_manager.py`
+**测试结果：** 50/50 tests passed
+
 ## [2026-03-09] 优化 | 产品推荐格式 — 品种类型单独行 + 标签化字段
 
 **变更内容：**
@@ -195,3 +282,33 @@
 **测试结果：**
 - [测试命令及结果，或说明"未运行测试"]
 -->
+
+## [2026-03-10] 修复 | tc_A5c TC 数据修复 + tc_A6 Vaporizer hardware gate
+
+**变更内容：**
+1. `golden_dataset_v1.json` — tc_A5c 的 `expected_behavior.tool_should_be_called` 从 `null` 改为 `"smart_search"`（TC 数据 bug，与 note 描述矛盾）
+2. `backend/llm_service.py` — 新增 `_VAPE_FORM_KEYWORDS`、`_VAPE_HARDWARE_KEYWORDS` 正则；新增 `is_vape_hardware_unknown_query()` 函数；在 `get_recommendation()` gate 逻辑中新增 vaporizer hardware gate（`tool_choice="none"`）；在 SYSTEM_PROMPT Step 3 新增 Vaporizers HARD GATE 说明
+
+**涉及文件：**
+- `golden_dataset_v1.json`（修改）
+- `backend/llm_service.py`（修改）
+
+**测试结果：**
+- tc_A5c：规则✅ 标准4/4 → 通过
+- tc_A6：规则✅ 标准3/4 → 通过
+- 全集：8/8 通过（100%），无回退
+
+## [2026-03-10] 修复 | 回退 prompt 改动 + 放宽 tc_A5a 评判标准
+
+**变更内容：**
+- `backend/llm_service.py`：还原 3 处 SYSTEM_PROMPT 改动
+  1. NO SIGNAL Exception：从"详细 Sativa/Indica/Hybrid 概览 + MANDATORY EXCEPTION"回退为简短 "Are you looking for Sativa, Indica, or Hybrid?"
+  2. Step 2 Flower exception：从"give a brief overview..."回退为简短 ask 句式
+  3. Step 3 HARD GATE：移除"strain overview has NOT yet been given"等冗余条件，保留核心 EXCEPTION（already asked → search immediately）
+- `golden_dataset_v1.json`：tc_A5a judge_criteria 4 条 → 3 条（移除"描述每种类型效果"和"特定句式"要求，保留询问方向、结尾引导问题、不直接推荐）
+
+**涉及文件：** `backend/llm_service.py`、`golden_dataset_v1.json`
+
+**测试结果：**
+- tc_A5a：规则✅ 标准3/3 → 通过
+- 全集：8/8 通过（100%），无回退

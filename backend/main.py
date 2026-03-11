@@ -66,7 +66,7 @@ def chat(request: ChatRequest):
 
     try:
         t_start = time.perf_counter()
-        reply = get_recommendation(history, request.user_message, _product_manager, is_beginner=request.is_beginner)
+        reply = get_recommendation(history, request.user_message, _product_manager)
         elapsed_ms = round((time.perf_counter() - t_start) * 1000, 1)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

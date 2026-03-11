@@ -18,10 +18,6 @@ class ChatRequest(BaseModel):
         default_factory=list,
         description="Conversation history (max 20 messages)",
     )
-    is_beginner: bool = Field(
-        default=False,
-        description="Whether the customer is a first-time user",
-    )
     user_message: str = Field(..., description="Current user message text")
 
 

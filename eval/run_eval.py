@@ -15,6 +15,7 @@ import logging
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -89,18 +90,24 @@ class EvalResult:
     tool_calls: list = field(default_factory=list)
     criterion_results: list = field(default_factory=list)
     error: str | None = None
+    user_message: str = ""
+    conversation_history: list = field(default_factory=list)
 
 
 # ── 工具调用拦截 ──────────────────────────────────────────────────────────────
-def _make_patched_search(pm: ProductManager, tool_calls_log: list):
-    """返回一个包装了 pm.search_products 的函数，记录调用参数。"""
-    original_search = pm.search_products
+class _PMWrapper:
+    """轻量包装类，拦截 search_products 调用以记录 tool call，不修改共享 pm 对象（线程安全）。"""
 
-    def patched_search(**kwargs):
-        tool_calls_log.append({"name": "smart_search", "args": kwargs})
-        return original_search(**kwargs)
+    def __init__(self, pm: ProductManager, tool_calls_log: list):
+        self._pm = pm
+        self._log = tool_calls_log
 
-    return patched_search
+    def search_products(self, **kwargs):
+        self._log.append({"name": "smart_search", "args": kwargs})
+        return self._pm.search_products(**kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._pm, name)
 
 
 # ── 规则检查 ──────────────────────────────────────────────────────────────────
@@ -211,7 +218,6 @@ def _check_rules(tc: dict, tool_calls_log: list) -> tuple[bool, list[dict]]:
 # ── DeepSeek Judge ────────────────────────────────────────────────────────────
 def _call_deepseek_judge(
     user_message: str,
-    is_beginner: bool,
     actual_reply: str,
     tool_calls_log: list,
     judge_criteria: list[str],
@@ -232,7 +238,6 @@ def _call_deepseek_judge(
 以下是一个 AI Budtender 的对话评估任务。
 
 用户输入：{user_message}
-is_beginner：{is_beginner}
 AI 回复：
 {actual_reply}
 
@@ -304,14 +309,13 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
     difficulty = tc["difficulty"]
     priority = tc["priority"]
     user_message = tc["input"]["user_message"]
-    is_beginner = tc["input"].get("is_beginner", False)
     history = tc["input"].get("conversation_history", [])
     judge_criteria = tc.get("judge_criteria", [])
 
     logger.info("▶ 评估 %s [%s/%s/%s]：%s", tc_id, scenario, difficulty, priority, user_message[:60])
 
     tool_calls_log: list[dict] = []
-    original_search = pm.search_products
+    pm_wrapper = _PMWrapper(pm, tool_calls_log)
 
     # Langfuse v3：最外层 span = trace
     with _lf_span(tc_id):
@@ -320,15 +324,11 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                 tags=[scenario, difficulty, priority],
                 metadata={
                     "description": tc.get("description", ""),
-                    "is_beginner": is_beginner,
                 },
             )
 
         try:
-            # ── monkeypatch search_products ────────────────────────────────────
-            pm.search_products = _make_patched_search(pm, tool_calls_log)
-
-            # ── 调用 budtender ─────────────────────────────────────────────────
+            # ── 调用 budtender（使用 pm_wrapper 拦截工具调用）─────────────────
             t_start = time.time()
             with _lf_span("budtender_call"):
                 simple = get_simple_response(user_message)
@@ -338,18 +338,14 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                     actual_reply = get_recommendation(
                         history=history,
                         user_message=user_message,
-                        product_manager=pm,
-                        is_beginner=is_beginner,
+                        product_manager=pm_wrapper,
                     )
                 if _langfuse_enabled and langfuse_client:
                     langfuse_client.update_current_span(
-                        input={"user_message": user_message, "is_beginner": is_beginner},
+                        input={"user_message": user_message},
                         output={"reply": actual_reply},
                         metadata={"elapsed_ms": int((time.time() - t_start) * 1000)},
                     )
-
-            # ── 还原 search_products ───────────────────────────────────────────
-            pm.search_products = original_search
 
             # ── span: tool_calls ───────────────────────────────────────────────
             with _lf_span("tool_calls"):
@@ -370,7 +366,6 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
             with _lf_span("deepseek_judge"):
                 judge_raw, criterion_results = _call_deepseek_judge(
                     user_message=user_message,
-                    is_beginner=is_beginner,
                     actual_reply=actual_reply,
                     tool_calls_log=tool_calls_log,
                     judge_criteria=judge_criteria,
@@ -419,11 +414,12 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                 reply=actual_reply,
                 tool_calls=tool_calls_log,
                 criterion_results=criterion_results,
+                user_message=user_message,
+                conversation_history=history,
             )
 
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("❌ %s 评估出错：%s", tc_id, exc, exc_info=True)
-            pm.search_products = original_search
             if _langfuse_enabled and langfuse_client:
                 langfuse_client.score_current_trace(name="overall", value=0.0)
                 langfuse_client.score_current_trace(name="error", value=1.0, comment=str(exc))
@@ -438,26 +434,29 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                 score=0.0,
                 reply="",
                 error=str(exc),
+                user_message=user_message,
+                conversation_history=history,
             )
 
 
 # ── 批量评估 ──────────────────────────────────────────────────────────────────
-def run_all_cases(dataset: dict, pm: ProductManager) -> list[EvalResult]:
-    results = []
+def run_all_cases(dataset: dict, pm: ProductManager, max_workers: int = 4) -> list[EvalResult]:
     test_cases = dataset.get("test_cases", [])
     total = len(test_cases)
 
     logger.info("=" * 60)
-    logger.info("开始评估 %d 个测试用例", total)
+    logger.info("开始评估 %d 个测试用例（并发 max_workers=%d）", total, max_workers)
     logger.info("=" * 60)
 
-    for i, tc in enumerate(test_cases, 1):
-        logger.info("[%d/%d]", i, total)
-        result = run_single_case(tc, pm)
-        results.append(result)
-        # 避免 OpenAI 限速
-        time.sleep(1)
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_single_case, tc, pm): tc for tc in test_cases}
+        for future in as_completed(futures):
+            results.append(future.result())
 
+    # 按原始顺序排序（as_completed 返回顺序不确定）
+    order = {tc["id"]: i for i, tc in enumerate(test_cases)}
+    results.sort(key=lambda r: order.get(r.tc_id, 999))
     return results
 
 
@@ -527,16 +526,20 @@ def generate_report(results: list[EvalResult], dataset: dict) -> Path:
             lines.append(f"  - {icon} {criterion} — \"{reason}\"")
 
         lines.append(f"")
-        # 实际回复（截断显示）
-        reply_preview = r.reply[:300].replace("\n", " ") if r.reply else ""
-        if len(r.reply) > 300:
-            reply_preview += "..."
-        lines.append(f"<details><summary>AI 实际回复</summary>")
-        lines.append(f"")
-        lines.append(f"{r.reply}")
-        lines.append(f"")
-        lines.append(f"</details>")
-        lines.append(f"")
+        lines.append("<details><summary>完整对话</summary>")
+        lines.append("")
+
+        for msg in r.conversation_history:
+            role_label = "**User**" if msg["role"] == "user" else "**AI**"
+            lines.append(f"{role_label}: {msg['content']}")
+            lines.append("")
+
+        lines.append(f"**User**: {r.user_message}")
+        lines.append("")
+        lines.append(f"**AI**: {r.reply}")
+        lines.append("")
+        lines.append("</details>")
+        lines.append("")
 
     report_content = "\n".join(lines)
     report_path.write_text(report_content, encoding="utf-8")

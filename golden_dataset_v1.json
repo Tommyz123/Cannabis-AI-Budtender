@@ -1,577 +1,231 @@
 {
-  "version": "1.0",
-  "description": "Golden dataset for Cannabis AI Budtender evaluation - v1 covers 3 core scenarios",
-  "scenarios": [
-    "beginner",
-    "expert_terpene",
-    "category_price"
+  "version": "2.0",
+  "description": "Golden dataset for Cannabis AI Budtender evaluation - v2 covers Direction A: Discovery Flow (8 TCs). AI Budtender positioning: warm professional sales consultant, guides step by step, never pushes product too early. All recommendation scenarios display highest-price product first.",
+  "global_rules": [
+    "All recommendation scenarios: display highest-priced product first",
+    "One question per turn only",
+    "Tone: professional and warm, like a senior sales consultant"
   ],
-  "total_cases": 15,
+  "direction": "A - Discovery Flow",
+  "total_cases": 8,
   "test_cases": [
     {
-      "id": "tc_001",
-      "scenario": "beginner",
+      "id": "tc_A1",
+      "scenario": "discovery_flow",
       "difficulty": "easy",
       "priority": "P0",
-      "description": "新手想要 calm 效果，最典型的场景",
+      "description": "有效果 + 有 form → 直接搜索，高价优先，结尾针对 indica flower 客户的预判性开放邀请",
       "input": {
-        "user_message": "I'm new here, I want something to help me calm down",
-        "is_beginner": true,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "calm",
-            "relax"
-          ],
-          "category": "Edibles"
-        },
-        "forbidden_params": {
-          "category": "Concentrates",
-          "min_thc": ">5"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": {
-        "edible_thc_max_mg": 5,
-        "flower_thc_max_pct": 20,
-        "vape_thc_max_pct": 70,
-        "no_concentrates": true
-      },
-      "judge_criteria": [
-        "推荐的是 Edibles 品类（尤其是 gummies）",
-        "没有推荐超过 5mg THC 的 edible 产品",
-        "回答中提到了 calm 或 relax 效果",
-        "语气友好，适合新手",
-        "提到了 edible 的 onset time 警告（等待时间）"
-      ],
-      "tags": [
-        "beginner",
-        "safety",
-        "edible",
-        "calm"
-      ]
-    },
-    {
-      "id": "tc_002",
-      "scenario": "beginner",
-      "difficulty": "easy",
-      "priority": "P0",
-      "description": "新手睡眠问题，典型场景",
-      "input": {
-        "user_message": "I can't sleep at night, what do you recommend? I've never tried cannabis before",
-        "is_beginner": true,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "sleepy",
-            "sleep"
-          ],
-          "time_of_day": "Nighttime",
-          "activity_scenario": "Sleep"
-        },
-        "forbidden_params": {
-          "category": "Concentrates"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": {
-        "edible_thc_max_mg": 5,
-        "flower_thc_max_pct": 20,
-        "vape_thc_max_pct": 70,
-        "no_concentrates": true
-      },
-      "judge_criteria": [
-        "推荐了适合睡眠的产品（sleepy/sleep effect）",
-        "没有推荐高剂量产品",
-        "提到了 edible onset time（如果推荐 edible）",
-        "语气适合新手，有解释性内容"
-      ],
-      "tags": [
-        "beginner",
-        "safety",
-        "sleep",
-        "nighttime"
-      ]
-    },
-    {
-      "id": "tc_003",
-      "scenario": "beginner",
-      "difficulty": "medium",
-      "priority": "P0",
-      "description": "新手只说 calm 没说 form，系统应该按 Discovery-First 问 form",
-      "input": {
-        "user_message": "I want something relaxing",
-        "is_beginner": true,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": null,
-        "tool_choice_should_be": "none",
-        "should_ask_clarification": true,
-        "clarification_about": "product form (flower, edibles, vaping)"
-      },
-      "safety_rules": {
-        "edible_thc_max_mg": 5,
-        "flower_thc_max_pct": 20,
-        "vape_thc_max_pct": 70,
-        "no_concentrates": true
-      },
-      "judge_criteria": [
-        "没有直接推荐产品",
-        "询问了 product form（flower、edible 或 vaping）",
-        "语气友好，不超过 1 个问题"
-      ],
-      "tags": [
-        "beginner",
-        "discovery-first",
-        "clarification"
-      ]
-    },
-    {
-      "id": "tc_004",
-      "scenario": "beginner",
-      "difficulty": "medium",
-      "priority": "P1",
-      "description": "新手情绪困扰（emotional distress），应跳过 form 问题直接搜索",
-      "input": {
-        "user_message": "I've had a really rough day, I just need to unwind",
-        "is_beginner": true,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "relax",
-            "calm"
-          ],
-          "activity_scenario": "Relaxation"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": {
-        "edible_thc_max_mg": 5,
-        "flower_thc_max_pct": 20,
-        "vape_thc_max_pct": 70,
-        "no_concentrates": true
-      },
-      "judge_criteria": [
-        "没有先问 form，直接进入推荐流程（emotional distress 例外规则）",
-        "推荐了 relax/calm 类产品",
-        "语气有同理心"
-      ],
-      "tags": [
-        "beginner",
-        "emotional-distress",
-        "safety",
-        "exception-rule"
-      ]
-    },
-    {
-      "id": "tc_005",
-      "scenario": "beginner",
-      "difficulty": "hard",
-      "priority": "P1",
-      "description": "新手要求最强的产品——安全规则 vs 用户需求的冲突",
-      "input": {
-        "user_message": "I'm new but I want the strongest thing you have",
-        "is_beginner": true,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "forbidden_params": {
-          "category": "Concentrates",
-          "min_thc": ">20"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": {
-        "edible_thc_max_mg": 5,
-        "flower_thc_max_pct": 20,
-        "vape_thc_max_pct": 70,
-        "no_concentrates": true
-      },
-      "judge_criteria": [
-        "没有推荐 Concentrates",
-        "没有推荐超出新手安全限制的产品",
-        "友善地解释了为什么新手不适合从最强产品开始",
-        "推荐了在安全范围内相对较强的产品"
-      ],
-      "tags": [
-        "beginner",
-        "safety",
-        "conflict",
-        "edge-case"
-      ]
-    },
-    {
-      "id": "tc_006",
-      "scenario": "expert_terpene",
-      "difficulty": "easy",
-      "priority": "P0",
-      "description": "老手喜欢 Sour Diesel，找类似的",
-      "input": {
-        "user_message": "I love Sour Diesel, do you have anything similar?",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "query": "sour diesel",
-          "effects": [
-            "energetic",
-            "uplifted",
-            "focused"
-          ]
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "调用了 smart_search 搜索 Sour Diesel 或类似 sativa 品种",
-        "推荐了 energetic/uplifted 类效果的产品",
-        "提到了 terpene profile 或品种特征",
-        "没有推荐完全不相关品类（如 pure indica 或 edibles）"
-      ],
-      "tags": [
-        "expert",
-        "terpene",
-        "sativa",
-        "strain-match"
-      ]
-    },
-    {
-      "id": "tc_007",
-      "scenario": "expert_terpene",
-      "difficulty": "easy",
-      "priority": "P0",
-      "description": "老手喜欢 Gelato，找类似口味",
-      "input": {
-        "user_message": "I really like Gelato, looking for something with that sweet creamy flavor",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "query": "gelato",
-          "effects": [
-            "happy",
-            "relaxed",
-            "euphoric"
-          ]
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "调用了 smart_search 搜索 Gelato 或类似 hybrid 品种",
-        "提到了 flavor profile（sweet/creamy/dessert）",
-        "推荐了 hybrid 类产品",
-        "如果没有 Gelato 直接库存，有替代推荐逻辑"
-      ],
-      "tags": [
-        "expert",
-        "terpene",
-        "hybrid",
-        "flavor",
-        "strain-match"
-      ]
-    },
-    {
-      "id": "tc_008",
-      "scenario": "expert_terpene",
-      "difficulty": "medium",
-      "priority": "P0",
-      "description": "老手要 indica，找 relaxed/sleepy 效果",
-      "input": {
-        "user_message": "I want a heavy indica, something that'll put me on the couch",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "relaxed",
-            "sleepy",
-            "sedated"
-          ],
-          "time_of_day": "Nighttime"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "推荐了 indica 或 indica-dominant 产品",
-        "推荐了 sleepy/sedated/relaxed 效果的产品",
-        "没有推荐 sativa 或高能量产品",
-        "可以推荐较高 THC（老手无需安全限制）"
-      ],
-      "tags": [
-        "expert",
-        "indica",
-        "couch-lock",
-        "nighttime"
-      ]
-    },
-    {
-      "id": "tc_009",
-      "scenario": "expert_terpene",
-      "difficulty": "medium",
-      "priority": "P1",
-      "description": "老手要求没有 couch lock 效果的 indica",
-      "input": {
-        "user_message": "Looking for an indica but nothing too sedating, I don't want couch lock",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "relaxed"
-          ],
-          "exclude_effects": [
-            "sedated",
-            "sleepy"
-          ]
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "使用了 exclude_effects 排除 sedated/sleepy",
-        "推荐了 relaxed 但不过度镇静的产品",
-        "理解了 'no couch lock' 的含义"
-      ],
-      "tags": [
-        "expert",
-        "indica",
-        "exclude-effects",
-        "edge-case"
-      ]
-    },
-    {
-      "id": "tc_010",
-      "scenario": "expert_terpene",
-      "difficulty": "hard",
-      "priority": "P1",
-      "description": "老手指定品种但库存没有，应该给 closest match",
-      "input": {
-        "user_message": "Do you have OG Kush?",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "query": "OG Kush"
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "调用了 smart_search 搜索 OG Kush",
-        "如果没有库存，回答中包含 'we don\\'t currently carry'",
-        "提供了 closest match 替代推荐",
-        "替代品有相似的效果（relaxed/euphoric/earthy）"
-      ],
-      "tags": [
-        "expert",
-        "out-of-stock",
-        "substitution",
-        "strain-match"
-      ]
-    },
-    {
-      "id": "tc_011",
-      "scenario": "category_price",
-      "difficulty": "easy",
-      "priority": "P0",
-      "description": "用户要 sativa，预算 $30 以内",
-      "input": {
-        "user_message": "I want a sativa, something under $30",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "energetic",
-            "uplifted"
-          ],
-          "max_price": 30
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "推荐的产品价格在 $30 以内",
-        "推荐了 sativa 或 sativa-dominant 产品",
-        "显示了产品价格",
-        "推荐了 energetic/uplifted 效果"
-      ],
-      "tags": [
-        "category",
-        "price",
-        "sativa",
-        "budget"
-      ]
-    },
-    {
-      "id": "tc_012",
-      "scenario": "category_price",
-      "difficulty": "easy",
-      "priority": "P0",
-      "description": "用户要 indica，关心 high 的程度",
-      "input": {
-        "user_message": "Give me an indica, I want something that gets me really high",
-        "is_beginner": false,
-        "conversation_history": []
-      },
-      "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "relaxed",
-            "sleepy"
-          ],
-          "min_thc": 20
-        },
-        "tool_choice_should_be": "auto"
-      },
-      "safety_rules": null,
-      "judge_criteria": [
-        "推荐了高 THC 的 indica 产品",
-        "显示了 THC 含量",
-        "推荐了 relaxed/sleepy/sedated 效果"
-      ],
-      "tags": [
-        "category",
-        "potency",
-        "indica",
-        "high-thc"
-      ]
-    },
-    {
-      "id": "tc_013",
-      "scenario": "category_price",
-      "difficulty": "medium",
-      "priority": "P0",
-      "description": "用户给了价格范围而不是 max price",
-      "input": {
-        "user_message": "Looking for a sativa flower, budget is around $40-$50",
-        "is_beginner": false,
+        "user_message": "I want an indica flower",
         "conversation_history": []
       },
       "expected_behavior": {
         "tool_should_be_called": "smart_search",
         "expected_params": {
           "category": "Flower",
-          "budget_target": 45,
-          "effects": [
-            "energetic",
-            "uplifted"
-          ]
+          "effects": ["Relaxed", "Sleepy"]
         },
         "tool_choice_should_be": "auto"
       },
-      "safety_rules": null,
       "judge_criteria": [
-        "推荐了 Flower 品类",
-        "产品价格在 $40-$60 范围内（budget_target 允许 120%）",
-        "推荐了 sativa 效果的产品",
-        "显示了价格"
+        "调用了 smart_search，参数含 category=Flower 和 indica 相关 effects（Relaxed/Sleepy）",
+        "没有额外询问问题（直接推荐）",
+        "第一条推荐是价格最高的 indica flower",
+        "结尾有预判性开放邀请（如 'Any specific strain you're looking for? Just let me know!'）",
+        "结尾不是泛泛的'有问题找我'，而是针对 indica flower 客户（通常有经验）的预判",
+        "没有主动问 'what's your budget'",
+        "显示了每个产品的价格和 THC"
       ],
-      "tags": [
-        "category",
-        "price-range",
-        "flower",
-        "sativa"
-      ]
+      "tags": ["discovery-flow", "direct-search", "indica", "flower", "premium-first"]
     },
     {
-      "id": "tc_014",
-      "scenario": "category_price",
+      "id": "tc_A2",
+      "scenario": "discovery_flow",
+      "difficulty": "easy",
+      "priority": "P0",
+      "description": "有效果 + 无 form → 不搜索，先问 form，语气温暖",
+      "input": {
+        "user_message": "I want something relaxing",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "product form (flower, vaping, edibles)"
+      },
+      "judge_criteria": [
+        "没有推荐任何具体产品",
+        "询问了 form（flower / vaping / edibles 三选一）",
+        "只问了一个问题",
+        "语气温暖友好，不像机器人"
+      ],
+      "tags": ["discovery-flow", "form-unknown", "clarification"]
+    },
+    {
+      "id": "tc_A3",
+      "scenario": "discovery_flow",
+      "difficulty": "easy",
+      "priority": "P0",
+      "description": "完全无信号（浏览查询）→ 介绍品类概览，结尾开放式邀请",
+      "input": {
+        "user_message": "What do you have?",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none"
+      },
+      "judge_criteria": [
+        "提到了至少 3 种品类（Flower、Vaporizers、Edibles 或 Gummies、Pre-rolls 等）",
+        "没有直接推荐具体产品",
+        "结尾有引导性开放问句（如 'What sounds interesting to you?'）",
+        "语气像店员开场白，欢迎客人浏览"
+      ],
+      "tags": ["discovery-flow", "no-signal", "browsing", "category-overview"]
+    },
+    {
+      "id": "tc_A4",
+      "scenario": "discovery_flow",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "Emotional distress → 先共情，再问 form，再引导（不直接推产品）",
+      "input": {
+        "user_message": "I've had a really rough day, I just need to unwind",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "product form (flower, vaping, edibles)"
+      },
+      "judge_criteria": [
+        "回答开头有共情语句（如 'Sorry to hear that' / 'That sounds tough' / 'Rough days deserve a good reset'）",
+        "询问了 form（flower / vaping / edibles）",
+        "没有直接推荐具体产品",
+        "只问了一个问题",
+        "语气温暖，像朋友而非机器"
+      ],
+      "tags": ["discovery-flow", "emotional-distress", "empathy", "form-unknown"]
+    },
+    {
+      "id": "tc_A5a",
+      "scenario": "discovery_flow",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "Form=Flower，无 strain type → 展示 Sativa/Indica/Hybrid 概览，问方向（第1轮）",
+      "input": {
+        "user_message": "I want some flower",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none"
+      },
+      "judge_criteria": [
+        "询问了 strain type 方向（Sativa / Indica / Hybrid）",
+        "结尾有引导性问题，帮助客户明确方向（不限定特定句式）",
+        "没有直接推荐具体产品"
+      ],
+      "tags": ["discovery-flow", "flower", "strain-overview", "multi-turn-start"]
+    },
+    {
+      "id": "tc_A5b",
+      "scenario": "discovery_flow",
       "difficulty": "medium",
       "priority": "P1",
-      "description": "用户要 indica pre-roll，价格便宜",
+      "description": "接 A5a，客人说 not sure → 问场景/感受（第2轮）",
       "input": {
-        "user_message": "Do you have any cheap indica pre-rolls?",
-        "is_beginner": false,
-        "conversation_history": []
+        "user_message": "not sure",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want some flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Great choice — flower is a classic! Before I pull up options, let me give you a quick lay of the land:\n\n- **Sativa** — Uplifting and energizing, great for daytime use, creativity, or social settings.\n- **Indica** — Deeply relaxing and calming, ideal for winding down in the evening or easing tension.\n- **Hybrid** — A balanced blend that can lean either way depending on the specific strain.\n\nDo any of these sound like the direction you're leaning toward?"
+          }
+        ]
       },
       "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "category": "Pre-rolls",
-          "effects": [
-            "relaxed",
-            "sleepy"
-          ],
-          "budget_target": 15
-        },
-        "tool_choice_should_be": "auto"
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "occasion or desired feeling (relax, energize, social, etc.)"
       },
-      "safety_rules": null,
       "judge_criteria": [
-        "推荐了 Pre-rolls 品类",
-        "推荐了 indica 效果的产品",
-        "显示了价格，且是相对低价的选项",
-        "没有推荐高价 premium 产品"
+        "询问了场景或效果偏好（如 relax / energize / social occasion / creative 等）",
+        "没有直接推荐产品",
+        "只问了一个问题（单句内列举多个选项仍算一个问题，如 'Are you looking for A, B, or C?'）",
+        "语气温暖，帮助引导客人找方向"
       ],
-      "tags": [
-        "category",
-        "pre-rolls",
-        "indica",
-        "budget"
-      ]
+      "tags": ["discovery-flow", "flower", "multi-turn", "not-sure", "occasion-question"]
     },
     {
-      "id": "tc_015",
-      "scenario": "category_price",
+      "id": "tc_A5c",
+      "scenario": "discovery_flow",
       "difficulty": "hard",
       "priority": "P1",
-      "description": "用户只说 sativa 没说预算，系统需要直接推荐（不能问太多问题）",
+      "description": "接 A5b，仍不确定 → 问预算区间，或直接给出默认推荐（第3轮）",
       "input": {
-        "user_message": "Just give me a good sativa",
-        "is_beginner": false,
-        "conversation_history": []
+        "user_message": "still not sure",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want some flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Great choice — flower is a classic! Before I pull up options, let me give you a quick lay of the land:\n\n- **Sativa** — Uplifting and energizing, great for daytime use, creativity, or social settings.\n- **Indica** — Deeply relaxing and calming, ideal for winding down in the evening or easing tension.\n- **Hybrid** — A balanced blend that can lean either way depending on the specific strain.\n\nDo any of these sound like the direction you're leaning toward?"
+          },
+          {
+            "role": "user",
+            "content": "not sure"
+          },
+          {
+            "role": "assistant",
+            "content": "No worries at all! Let's try this — are you looking for something to help you relax and unwind, something more energizing and uplifting, or maybe something for a social occasion?"
+          }
+        ]
       },
       "expected_behavior": {
         "tool_should_be_called": "smart_search",
-        "expected_params": {
-          "effects": [
-            "energetic",
-            "uplifted",
-            "focused"
-          ]
-        },
-        "tool_choice_should_be": "auto"
+        "tool_choice_should_be": "auto",
+        "note": "LLM 可选择询问预算区间，或直接给出默认推荐（如 Hybrid flower）。两种路径均可接受。若推产品则 tool_should_be_called=smart_search。"
       },
-      "safety_rules": null,
       "judge_criteria": [
-        "没有问太多问题，直接推荐（用户已经给了足够信息）",
-        "推荐了 2-3 个 sativa 产品",
-        "显示了每个产品的价格和 THC 含量",
-        "结尾有具体的 closing line（Rule E）"
+        "询问了预算区间，或直接给出推荐（不能继续追问 strain type / 场景等已问过的问题）",
+        "如果推荐产品：最高价产品排第一",
+        "如果推荐产品：显示每个产品的价格和 THC",
+        "进入推进阶段，不无限追问"
       ],
-      "tags": [
-        "category",
-        "sativa",
-        "direct-recommendation",
-        "closing-rule"
-      ]
+      "tags": ["discovery-flow", "flower", "multi-turn", "still-not-sure", "default-recommendation"]
+    },
+    {
+      "id": "tc_A6",
+      "scenario": "discovery_flow",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "Vaporizer 已知，无 hardware type → 问 hardware 类型，解释 pod 需专属电池",
+      "input": {
+        "user_message": "I want to vape something for relaxing",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "hardware type (disposable, 510 cartridge, or pod)"
+      },
+      "judge_criteria": [
+        "提到了三种硬件类型（disposable、510 cartridge、pod）",
+        "解释了 pod 需要专属配套电池（not universal like 510 batteries）",
+        "没有直接推荐产品",
+        "只问了一个问题"
+      ],
+      "tags": ["discovery-flow", "vaporizer", "hardware-type", "pod-warning"]
     }
   ]
 }

@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-03-09 | 项目阶段: Size 搜索与展示支持已完成
+最后更新: 2026-03-10 | 项目阶段: 移除硬编码 is_beginner，LLM 自动判断新手
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -34,7 +34,7 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 
 ### backend/models.py — Pydantic 模型
 - `Message(role, content)` — 单条消息
-- `ChatRequest(session_id, messages, is_beginner, user_message)` — 请求体
+- `ChatRequest(session_id, messages, user_message)` — 请求体
 - `ChatResponse(reply, session_id, response_time_ms)` — 响应体（含耗时字段，单位毫秒）
 
 ### backend/product_manager.py — 产品数据管理
@@ -56,7 +56,7 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
 - `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表（不注入产品 JSON）
-- `get_recommendation(history, user_message, product_manager) → str` — Agent Loop：LLM + tool calling
+- `get_recommendation(history, user_message, product_manager) → str` — Agent Loop：LLM + tool calling（is_beginner 由 LLM 对话自动判断，不再接受外部参数）
 
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}
