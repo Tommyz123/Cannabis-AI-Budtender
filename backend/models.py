@@ -19,6 +19,7 @@ class ChatRequest(BaseModel):
         description="Conversation history (max 20 messages)",
     )
     user_message: str = Field(..., description="Current user message text")
+    is_beginner: bool = Field(default=False, description="True if customer is a first-time/beginner user")
 
 
 class ChatResponse(BaseModel):

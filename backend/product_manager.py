@@ -158,6 +158,7 @@ class ProductManager:
         exclude_effects: list[str] | None = None,
         exclude_categories: list[str] | None = None,
         min_thc: float | None = None,
+        max_thc: float | None = None,
         max_price: float | None = None,
         budget_target: float | None = None,
         time_of_day: str | None = None,
@@ -216,6 +217,11 @@ class ProductManager:
             pct_mask = df["THCUnit"] == "%"
             df = df[~pct_mask | (df["THCLevel"] >= min_thc)]
 
+        # 5b. max_thc (percentage products only)
+        if max_thc is not None:
+            pct_mask = df["THCUnit"] == "%"
+            df = df[~pct_mask | (df["THCLevel"] <= max_thc)]
+
         # 6. max_price filter
         if max_price is not None:
             df = df[df["Price"].fillna(0) <= max_price]
@@ -244,7 +250,7 @@ class ProductManager:
         if unit_weight:
             df = df[df["UnitWeight"].str.lower() == unit_weight.lower()]
 
-        # 11. free-text query (Strain + Types + Feelings + UnitWeight + Description)
+        # 11. free-text query (Strain + Types + Feelings + UnitWeight + Description + FlavorProfile + HardwareType)
         if query:
             desc_col = "Description" if "Description" in df.columns else None
             mask = df["Strain"].str.contains(query, case=False, na=False)
@@ -253,6 +259,8 @@ class ProductManager:
             mask |= df["UnitWeight"].str.contains(query, case=False, na=False)
             if desc_col:
                 mask |= df[desc_col].str.contains(query, case=False, na=False)
+            mask |= df["FlavorProfile"].str.contains(query, case=False, na=False)
+            mask |= df["HardwareType"].str.contains(query, case=False, na=False)
             df = df[mask]
 
         # 11. Beginner safety filter
@@ -270,14 +278,21 @@ class ProductManager:
         if not df.empty and "UnitWeight" in df.columns:
             df = df.copy()
             df["_weight_num"] = df["UnitWeight"].apply(_parse_weight)
-            df = df.sort_values(["_weight_num", "Price"], ascending=[False, False])
+            if budget_target is not None:
+                # Budget intent: show products closest to budget target first
+                df["_price_dist"] = (df["Price"].fillna(0) - budget_target).abs()
+                df = df.sort_values(["_price_dist"], ascending=[True])
+                df = df.drop(columns=["_price_dist"])
+            else:
+                df = df.sort_values(["_weight_num", "Price"], ascending=[False, False])
             df = df.drop(columns=["_weight_num"])
 
         # Limit results
+        matched_count = len(df)
         df = df.head(limit)
 
         products = [_row_to_compact(row) for _, row in df.iterrows()]
-        return {"products": products, "total": len(products)}
+        return {"products": products, "total": matched_count}
 
     def get_product_by_id(self, product_id: str) -> dict | None:
         """Return full compact product info for a given product ID, or None if not found."""

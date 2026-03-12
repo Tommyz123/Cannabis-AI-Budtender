@@ -7,8 +7,11 @@ An embeddable AI chat widget that helps cannabis dispensary customers find the r
 ## Features
 
 - **Conversational Recommendations** — Understands customer needs through multi-turn dialogue (effects, budget, time of day, activity) and recommends the best-matched products from live inventory.
-- **Beginner Safety Mode** — Automatically enforces THC limits (edibles ≤ 5 mg, flower ≤ 20%, vaporizers ≤ 70%) when the customer self-identifies as a first-time user.
+- **Beginner Safety Mode** — Enforces THC limits (edibles ≤ 5 mg, flower ≤ 20%, vaporizers ≤ 70%) when `is_beginner: true` is passed in the request. The LLM receives a session-level context injection so it never asks the customer again and always applies beginner filters throughout the conversation.
 - **Agent Loop with Tool Calling** — Uses OpenAI function calling to run `smart_search` and `get_product_details` against a 217-product catalog, enabling precise, multi-criteria filtering without injecting the full dataset into every prompt.
+- **Rich Free-Text Search** — `smart_search` matches against strain name, product type, effects, flavor profile, and hardware type, so queries like "citrus" or "pod" return relevant results.
+- **Budget-Aware Sorting** — When a budget target is provided, results are sorted by proximity to the budget (closest price first) rather than by weight or premium ranking.
+- **Accurate Result Counts** — The `total` field in search results reflects the actual number of matched products, not the number returned after the limit is applied.
 - **Fast-Path Responses** — Greetings, closings, and simple acknowledgments bypass the LLM entirely, reducing latency and API cost.
 - **Drop-In Chat Widget** — Pure HTML/CSS/JS frontend with a floating button and chat drawer; no build step required. Embeds on any webpage with a single `<script>` tag.
 
@@ -95,6 +98,8 @@ Open `frontend/index.html` in your browser directly, or serve it from any static
 }
 ```
 
+Set `is_beginner: true` for first-time customers. The backend injects a session-level context into the LLM, which will apply beginner safety filters for the entire session and never ask the customer whether they are a beginner.
+
 ---
 
 ## Project Structure
@@ -125,6 +130,19 @@ AI_BUDTENDER2/
 ```bash
 venv/bin/python -m pytest tests/ -v --cov=backend --cov-report=term-missing
 ```
+
+## Eval Framework
+
+The project includes a golden-dataset eval framework for validating LLM conversation quality end-to-end.
+
+```bash
+source venv/bin/activate
+python eval/run_eval.py
+```
+
+Test cases are defined in `golden_dataset_v1.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
+
+Current coverage: **12 test cases** across discovery flow and recommendation refinement scenarios (12/12 passing).
 
 ## License
 

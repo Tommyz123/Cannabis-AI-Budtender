@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-03-10 | 项目阶段: 移除硬编码 is_beginner，LLM 自动判断新手
+最后更新: 2026-03-11 | 项目阶段: 修复 6 个产品可信度问题（搜索缺口、total 语义、预算排序、Beginner 打通）
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -34,14 +34,14 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 
 ### backend/models.py — Pydantic 模型
 - `Message(role, content)` — 单条消息
-- `ChatRequest(session_id, messages, user_message)` — 请求体
+- `ChatRequest(session_id, messages, user_message, is_beginner=False)` — 请求体
 - `ChatResponse(reply, session_id, response_time_ms)` — 响应体（含耗时字段，单位毫秒）
 
 ### backend/product_manager.py — 产品数据管理
 - `ProductManager.load(csv_path) → None` — 加载 CSV，建立索引
 - `ProductManager.get_all_compact_json() → str` — 全量产品 compact JSON
 - `ProductManager.get_beginner_compact_json() → str` — 新手安全过滤产品 JSON（含降级策略）
-- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）
+- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）；total 返回实际命中数；有 budget_target 时按价格距离升序排序；free-text query 覆盖 FlavorProfile + HardwareType 列
 - `ProductManager.get_product_by_id(product_id) → dict | None` — 按 ID 返回单个产品
 - `ProductManager.total_count → int` — 已加载产品数
 - `ProductManager.category_index → dict` — 品类 → DataFrame 映射
@@ -56,7 +56,7 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
 - `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表（不注入产品 JSON）
-- `get_recommendation(history, user_message, product_manager) → str` — Agent Loop：LLM + tool calling（is_beginner 由 LLM 对话自动判断，不再接受外部参数）
+- `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop：LLM + tool calling；is_beginner=True 时注入 SESSION CONTEXT 提示，强制 LLM 始终传 is_beginner=true
 
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}

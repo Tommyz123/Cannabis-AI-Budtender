@@ -49,9 +49,7 @@ def health_check():
 def chat(request: ChatRequest):
     """
     Handle a chat turn and return the AI recommendation.
-
-    Selects the product set based on is_beginner flag,
-    then calls the LLM to generate a reply.
+    Passes is_beginner flag to LLM session context when set.
     """
     if not request.user_message.strip():
         raise HTTPException(status_code=400, detail="user_message cannot be empty")
@@ -66,7 +64,12 @@ def chat(request: ChatRequest):
 
     try:
         t_start = time.perf_counter()
-        reply = get_recommendation(history, request.user_message, _product_manager)
+        reply = get_recommendation(
+            history,
+            request.user_message,
+            _product_manager,
+            is_beginner=request.is_beginner,
+        )
         elapsed_ms = round((time.perf_counter() - t_start) * 1000, 1)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

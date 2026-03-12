@@ -62,13 +62,11 @@ def test_chat_request_model():
     req = ChatRequest(
         session_id="abc-123",
         messages=[Message(role="user", content="Hello")],
-        is_beginner=False,
         user_message="I need something to help me sleep.",
     )
     assert req.session_id == "abc-123"
     assert len(req.messages) == 1
     assert req.messages[0].role == "user"
-    assert req.is_beginner is False
     assert "sleep" in req.user_message
 
 
@@ -78,7 +76,6 @@ def test_chat_request_model_defaults():
 
     req = ChatRequest(session_id="xyz", user_message="hi")
     assert req.messages == []
-    assert req.is_beginner is False
 
 
 def test_chat_response_model():

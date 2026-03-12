@@ -1,13 +1,13 @@
 {
-  "version": "2.0",
-  "description": "Golden dataset for Cannabis AI Budtender evaluation - v2 covers Direction A: Discovery Flow (8 TCs). AI Budtender positioning: warm professional sales consultant, guides step by step, never pushes product too early. All recommendation scenarios display highest-price product first.",
+  "version": "2.1",
+  "description": "Golden dataset for Cannabis AI Budtender evaluation - v2.1 covers Direction A: Discovery Flow (8 TCs) + Direction B: Recommendation Refinement (4 TCs). AI Budtender positioning: warm professional sales consultant, guides step by step, never pushes product too early. All recommendation scenarios display highest-price product first.",
   "global_rules": [
     "All recommendation scenarios: display highest-priced product first",
     "One question per turn only",
     "Tone: professional and warm, like a senior sales consultant"
   ],
-  "direction": "A - Discovery Flow",
-  "total_cases": 8,
+  "directions": ["A - Discovery Flow", "B - Recommendation Refinement"],
+  "total_cases": 12,
   "test_cases": [
     {
       "id": "tc_A1",
@@ -30,7 +30,7 @@
       "judge_criteria": [
         "调用了 smart_search，参数含 category=Flower 和 indica 相关 effects（Relaxed/Sleepy）",
         "没有额外询问问题（直接推荐）",
-        "第一条推荐是价格最高的 indica flower",
+        "第一条推荐是总价最高的 indica flower（按总价排序，不按单克价比较）",
         "结尾有预判性开放邀请（如 'Any specific strain you're looking for? Just let me know!'）",
         "结尾不是泛泛的'有问题找我'，而是针对 indica flower 客户（通常有经验）的预判",
         "没有主动问 'what's your budget'",
@@ -226,6 +226,145 @@
         "只问了一个问题"
       ],
       "tags": ["discovery-flow", "vaporizer", "hardware-type", "pod-warning"]
+    },
+    {
+      "id": "tc_B1",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "客户看到 Flower 推荐后说太贵 → AI 应询问价格区间，不直接重搜",
+      "input": {
+        "user_message": "these are a bit pricey, anything cheaper?",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want an indica flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some fantastic indica flower options for you:\n\n1. **Papaya Cake** by Aetema\n   Indica-Hybrid\n   Size: 28g | Price: $270 | THC: 25%\n   This strain offers a tropical flavor with notes of mango and apricot, providing a deeply relaxing experience that leaves you feeling sleepy and hungry.\n\n2. **Harvest | Skywalker OG** by Harvest\n   Indica-Hybrid\n   Size: 28g | Price: $175 | THC: 22%\n   With earthy and floral undertones, this strain is known for its sleepy and relaxed effects.\n\n3. **Benzina** by Florist Farms\n   Indica\n   Size: 7g | Price: $70 | THC: 26%\n   This flavorful strain features peppery and herbal notes, delivering happy and relaxed vibes.\n\n4. **Hindu Kush | Jar** by Dank\n   Indica\n   Size: 3.5g | Price: $53 | THC: 29%\n   A classic strain with earthy and herbal flavors, known for its strong relaxing and sleepy effects.\n\nAny of these catch your interest?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "price range / budget"
+      },
+      "judge_criteria": [
+        "没有直接调用 smart_search 重搜",
+        "询问了客户的价格区间或预算",
+        "只问了一个问题",
+        "没有重新询问品类或效果（已知信息不再询问）"
+      ],
+      "tags": ["recommendation-refinement", "price-feedback", "clarification"]
+    },
+    {
+      "id": "tc_B2",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "客户看到高 THC Vape 推荐后说太强 → AI 应降低 THC 重搜，保留品类参数",
+      "input": {
+        "user_message": "that feels a bit too strong for me, something lighter?",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want to vape something for relaxing"
+          },
+          {
+            "role": "assistant",
+            "content": "Since you're looking for something relaxing, that usually points toward indica or hybrid. Are you looking for a **disposable** (all-in-one, no extras needed), a **510 cartridge** (works with any standard 510 battery), or a **pod** system? Just a heads-up — pod systems require a dedicated compatible battery, unlike 510 batteries which are universal."
+          },
+          {
+            "role": "user",
+            "content": "510 cartridge"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some great 510 cartridge options for relaxing:\n\n1. **Papaya Punch** by Florist Farms\n   Price: $55 | THC: 85%\n   A rich indica-leaning cart with tropical and sweet notes, delivering deep relaxation and a calming body effect.\n\n2. **Northern Lights** by Aetema\n   Price: $48 | THC: 82%\n   Earthy and pine-forward, this classic indica cart wraps you in a warm, sleepy calm — perfect for unwinding.\n\nAny of these feel like what you had in mind?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "expected_params": {
+          "category": "Vaporizers"
+        }
+      },
+      "judge_criteria": [
+        "调用了 smart_search",
+        "搜索参数包含 THC 上限约束（max_thc）或 is_beginner=true",
+        "保留了 category=Vaporizers（不丢失已知品类）",
+        "没有重新询问 hardware type 或效果（已知信息不再询问）"
+      ],
+      "tags": ["recommendation-refinement", "thc-feedback", "re-search"]
+    },
+    {
+      "id": "tc_B3",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "客户看到 Edibles 推荐后说不喜欢 → AI 应询问具体原因，不直接重搜",
+      "input": {
+        "user_message": "I don't really like any of these",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want some edibles for relaxing"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some great edible options to help you relax:\n\n1. **Midnight Blueberry Gummies** by Kiva\n   Price: $35 | THC: 10mg per piece\n   These gummies deliver a calm, body-relaxing experience with a sweet blueberry flavor — great for winding down in the evening.\n\n2. **Mango Dream Chews** by Wana\n   Price: $28 | THC: 5mg per piece\n   Light and easy to dose, these mango-flavored chews offer gentle relaxation without feeling overwhelmed.\n\n3. **Dark Chocolate Bar** by Défoncé\n   Price: $22 | THC: 5mg per piece\n   A rich dark chocolate bar with a subtle earthy finish — perfect for a relaxed evening treat.\n\nAny of these appeal to you, or would you like to explore a different direction?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "should_ask_clarification": true,
+        "clarification_about": "reason for dislike (price, effects, flavor, type, etc.)"
+      },
+      "judge_criteria": [
+        "没有直接调用 smart_search 重搜",
+        "询问了客户具体哪里不满意（价格 / 效果 / 口味 / 类型等）",
+        "只问了一个问题",
+        "语气温和，不让客户觉得被质问"
+      ],
+      "tags": ["recommendation-refinement", "dislike-feedback", "clarification"]
+    },
+    {
+      "id": "tc_B4",
+      "scenario": "recommendation_refinement",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "客户点名询问推荐列表中某个产品的更多详情 → AI 调用工具查询，不凭记忆回答",
+      "input": {
+        "user_message": "tell me more about Papaya Cake",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want an indica flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some fantastic indica flower options for you:\n\n1. **Papaya Cake** by Aetema\n   Indica-Hybrid\n   Size: 28g | Price: $270 | THC: 25%\n   This strain offers a tropical flavor with notes of mango and apricot, providing a deeply relaxing experience.\n\n2. **Harvest | Skywalker OG** by Harvest\n   Indica-Hybrid\n   Size: 28g | Price: $175 | THC: 22%\n   With earthy and floral undertones, this strain is known for its sleepy and relaxed effects.\n\n3. **Benzina** by Florist Farms\n   Indica\n   Size: 7g | Price: $70 | THC: 26%\n   This flavorful strain features peppery and herbal notes, delivering happy and relaxed vibes.\n\nAny of these catch your interest?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "get_product_details",
+        "tool_choice_should_be": "auto",
+        "note": "AI 可先调用 smart_search(query='Papaya Cake') 获取 product_id，再调用 get_product_details；或直接调用 get_product_details。两种路径均可接受。"
+      },
+      "judge_criteria": [
+        "调用了 get_product_details 或 smart_search（不能凭记忆回答）",
+        "回复包含比原推荐更丰富的产品信息",
+        "没有捏造产品信息（只描述工具返回的字段）"
+      ],
+      "tags": ["recommendation-refinement", "product-detail", "get-product-details"]
     }
   ]
 }

@@ -103,8 +103,9 @@ class _PMWrapper:
         self._log = tool_calls_log
 
     def search_products(self, **kwargs):
-        self._log.append({"name": "smart_search", "args": kwargs})
-        return self._pm.search_products(**kwargs)
+        result = self._pm.search_products(**kwargs)
+        self._log.append({"name": "smart_search", "args": kwargs, "result": result})
+        return result
 
     def __getattr__(self, name):
         return getattr(self._pm, name)
@@ -232,7 +233,24 @@ def _call_deepseek_judge(
         return "SKIPPED", skipped
 
     criteria_text = "\n".join(f"{i+1}. {c}" for i, c in enumerate(judge_criteria))
-    tool_calls_text = json.dumps(tool_calls_log, ensure_ascii=False, indent=2) if tool_calls_log else "（无工具调用）"
+
+    def _format_tool_calls_for_judge(log: list) -> str:
+        if not log:
+            return "（无工具调用）"
+        formatted = []
+        for c in log:
+            entry = {"name": c["name"], "args": c["args"]}
+            result = c.get("result")
+            if result and isinstance(result, dict):
+                products = result.get("products", [])
+                entry["result_summary"] = {
+                    "total": result.get("total", 0),
+                    "products": products[:3],
+                }
+            formatted.append(entry)
+        return json.dumps(formatted, ensure_ascii=False, indent=2)
+
+    tool_calls_text = _format_tool_calls_for_judge(tool_calls_log)
 
     judge_prompt = f"""你是一个严格的 AI 评估裁判。
 以下是一个 AI Budtender 的对话评估任务。
@@ -553,6 +571,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="AI Budtender 自动化评估")
     parser.add_argument("--tc", type=str, default=None, help="只运行指定 TC（例如 tc_007）")
+    parser.add_argument("--series", type=str, default=None, help="只运行指定系列（例如 B，匹配 tc_B*）")
     args = parser.parse_args()
 
     # 1. 加载数据集
@@ -583,6 +602,16 @@ def main():
         dataset = dict(dataset)
         dataset["test_cases"] = test_cases
         logger.info("单 TC 模式：只运行 %s", args.tc)
+
+    if args.series:
+        prefix = f"tc_{args.series.upper()}"
+        test_cases = [tc for tc in dataset.get("test_cases", []) if tc["id"].startswith(prefix)]
+        if not test_cases:
+            logger.error("系列 '%s' 在数据集中没有匹配用例", args.series)
+            sys.exit(1)
+        dataset = dict(dataset)
+        dataset["test_cases"] = test_cases
+        logger.info("系列过滤：运行 %d 个 %s* 用例", len(test_cases), prefix)
 
     # 4. 运行所有测试用例
     results = run_all_cases(dataset, pm)

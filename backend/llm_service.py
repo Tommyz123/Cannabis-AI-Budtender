@@ -88,8 +88,9 @@ NO SIGNAL → ask ONE question, the one that unlocks the most:
 - **HARD GATE — Vaporizers**: before calling smart_search for vape products, hardware type (disposable / 510 cartridge / pod) MUST be known. If unknown → ask the hardware question (see Vaporizer Hardware Rule above) and STOP. Do NOT search yet.
 - Have effect signal + form → call smart_search immediately
 - DO NOT ask for strain type (Indica/Sativa/Hybrid) if effect intent is known — let the search find it
-- If customer's feedback says "too expensive" → adjust max_price or budget_target and re-search
-- If customer's feedback says "too strong" → lower min_thc or add is_beginner=true and re-search
+- **HARD GATE — Price Feedback**: If customer says "too expensive" / "cheaper" / "more affordable" / "something cheaper" and no explicit price range or number has been mentioned → ask ONE question: "What price range works for you?" and STOP. Do NOT call smart_search until a price range is known.
+- **HARD GATE — Generic Rejection**: If customer says "I don't like any of these" / "none of these" / "not what I'm looking for" / "not really my thing" and has NOT specified why → ask ONE clarifying question: "What specifically didn't work for you — the price, the effects, the flavor, or the product type?" and STOP. Do NOT call smart_search until you know the reason.
+- If customer's feedback says "too strong" / "too potent" / "something lighter" → add max_thc constraint set below the THC levels shown in previous recommendations (e.g. max_thc=70 for vape carts, max_thc=18 for flower), then re-search. Do NOT use min_thc for this case.
 
 ---
 
@@ -246,6 +247,12 @@ Interpret ALL natural language by underlying intent. When calling smart_search, 
 You have access to `smart_search` to find products and `get_product_details` for full product info.
 Use `smart_search` whenever you are ready to recommend products. Never recommend products without calling the tool first.
 
+**PRODUCT DETAILS REQUEST** — When the customer asks for more info about a specific product they've already seen (e.g. "tell me more about X", "more details on X", "what's X like", "can you tell me more about X"):
+- Call `smart_search(query='[product name]', limit=1)` to retrieve fresh product data.
+- Your reply MUST be a thorough product introduction built entirely from the data fields returned by the tool. Cover ALL of the following that are available in the result: full flavor profile (every flavor note returned), complete effects list, THC level with dosing context (e.g. "at 25% THC, this is on the stronger side — start slow"), size/price/value framing, best time of day and activity pairing, and how it fits the customer's stated needs from this conversation.
+- Do NOT summarize — expand. The response should feel like a budtender walking the customer through every detail of the product.
+- Only describe fields actually returned by the tool. Do NOT invent or guess flavor, effects, or any other detail.
+
 **TOOL CALL RULES (follow strictly):**
 - Call `smart_search` EXACTLY ONCE per turn — combine ALL criteria in a single call.
 
@@ -349,6 +356,13 @@ _VAPE_HARDWARE_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_PRICE_FEEDBACK_KEYWORDS = re.compile(
+    r"\b(too expensive|pricey|cheaper|more affordable|lower price|less expensive|something cheaper)\b",
+    re.IGNORECASE,
+)
+
+_PRICE_NUMBER = re.compile(r"\$\s*\d+|\d+\s*dollars?|\d+\s*bucks?", re.IGNORECASE)
+
 def is_medical_query(user_message: str) -> bool:
     """Detect 'cure/treat [medical condition]' pattern."""
     return bool(_MEDICAL_PATTERNS.search(user_message))
@@ -379,6 +393,35 @@ def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
     if _STRAIN_TYPES.search(user_message):
         return False
     return True
+
+
+def is_price_feedback_query(user_message: str) -> bool:
+    """
+    Return True if the user signals price concern but provides no explicit price number.
+    Used to force LLM to ask for budget range before re-searching.
+    """
+    if not _PRICE_FEEDBACK_KEYWORDS.search(user_message):
+        return False
+    if _PRICE_NUMBER.search(user_message):
+        return False
+    return True
+
+
+_GENERIC_REJECTION_PATTERNS = re.compile(
+    r"\b(don'?t (really |particularly )?(like|want|need) any( of these)?|"
+    r"none of these|not (really |quite )?(what i('?m| was) looking for|right|what i want)|"
+    r"not (really )?my (thing|style|taste)|these don'?t (work|appeal|do it)|"
+    r"i'?m not (feeling|into) (any of )?these)\b",
+    re.IGNORECASE,
+)
+
+
+def is_generic_rejection_query(user_message: str) -> bool:
+    """
+    Return True if the user rejects all current recommendations without specifying why.
+    Forces LLM to ask a clarifying question before re-searching.
+    """
+    return bool(_GENERIC_REJECTION_PATTERNS.search(user_message))
 
 
 def is_vape_hardware_unknown_query(user_message: str, history: list[dict]) -> bool:
@@ -577,6 +620,10 @@ TOOLS_SCHEMA = [
                         "type": "number",
                         "description": "Minimum THC percentage (for experienced users wanting potency)",
                     },
+                    "max_thc": {
+                        "type": "number",
+                        "description": "Maximum THC percentage (for customers who find current options too strong, e.g. max_thc=70 for vape, max_thc=18 for flower)",
+                    },
                     "max_price": {
                         "type": "number",
                         "description": "Maximum price filter",
@@ -682,6 +729,7 @@ def get_recommendation(
     history: list[dict],
     user_message: str,
     product_manager,  # ProductManager instance
+    is_beginner: bool = False,
 ) -> str:
     """
     Run the Agent Loop: call LLM → execute tool calls → call LLM again until done.
@@ -711,10 +759,29 @@ def get_recommendation(
         tool_choice = "none"
     elif is_vape_hardware_unknown_query(user_message, history):
         tool_choice = "none"
+    elif is_price_feedback_query(user_message):
+        tool_choice = "none"
+    elif is_generic_rejection_query(user_message):
+        tool_choice = "none"
     else:
         tool_choice = "auto"
 
     messages = build_messages(history, user_message, profile)
+
+    if is_beginner:
+        messages[0]["content"] += (
+            "\n\n[SESSION CONTEXT]: This customer has been identified as a first-time/beginner user. "
+            "ALWAYS include is_beginner=true in ALL smart_search calls for this session. "
+            "Never ask if they are a beginner — it is already confirmed."
+        )
+
+    # Inject targeted action instruction for price feedback (overrides "Customer feedback: price too high")
+    if is_price_feedback_query(user_message):
+        messages[0]["content"] += (
+            "\n\n[IMMEDIATE ACTION REQUIRED]: Customer said prices are too high but has NOT specified a budget. "
+            "Your response MUST be ONE question only: ask what price range works for them. "
+            "Do NOT write 'let me find' or 'I'll look for' anything. Just ask: 'What price range works for you?'"
+        )
 
     try:
         # Agent loop — max 3 iterations to prevent infinite loops

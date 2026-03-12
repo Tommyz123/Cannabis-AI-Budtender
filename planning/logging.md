@@ -3,6 +3,18 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-11] 修复 | 6 个产品可信度问题修复（搜索缺口、total 语义、预算排序、Beginner 打通）
+
+- **变更内容**：
+  1. `backend/product_manager.py` 搜索 free-text query 段新增 FlavorProfile + HardwareType 两列覆盖
+  2. `backend/product_manager.py` `total` 字段改为返回实际命中数（matched_count），而非截断后数量
+  3. `backend/product_manager.py` 预算排序：有 budget_target 时按价格距离升序，无则保持原逻辑
+  4. `backend/models.py` `ChatRequest` 新增 `is_beginner: bool = False` 字段
+  5. `backend/llm_service.py` `get_recommendation()` 新增 `is_beginner` 参数，注入 SESSION CONTEXT 提示
+  6. `backend/main.py` 传入 `is_beginner=request.is_beginner`，修正腐烂 docstring
+- **涉及文件**：`backend/product_manager.py`、`backend/models.py`、`backend/llm_service.py`、`backend/main.py`
+- **测试结果**：50/50 passed，无回退
+
 ## [2026-03-10] 优化 | tc_A5b 评分标准澄清 + tc_A6 prompt 强化 pod 电池说明
 
 - **变更内容**：
