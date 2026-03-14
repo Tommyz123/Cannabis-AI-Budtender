@@ -725,47 +725,30 @@ def build_messages(
 
 # ── Agent loop ────────────────────────────────────────────────────────────────
 
-def get_recommendation(
+def _determine_tool_choice(user_message: str, history: list[dict]) -> str:
+    """Return 'none' or 'auto' based on query classification."""
+    if is_medical_query(user_message):
+        return "none"
+    if is_vague_query(user_message):
+        return "none"
+    if is_form_unknown_query(user_message, history):
+        return "none"
+    if is_vape_hardware_unknown_query(user_message, history):
+        return "none"
+    if is_price_feedback_query(user_message):
+        return "none"
+    if is_generic_rejection_query(user_message):
+        return "none"
+    return "auto"
+
+
+def _prepare_messages(
     history: list[dict],
     user_message: str,
-    product_manager,  # ProductManager instance
-    is_beginner: bool = False,
-) -> str:
-    """
-    Run the Agent Loop: call LLM → execute tool calls → call LLM again until done.
-
-    Args:
-        history: Previous messages as list of {role, content} dicts.
-        user_message: Current user message text.
-        product_manager: ProductManager instance for tool execution.
-
-    Returns:
-        Final assistant reply text.
-
-    Raises:
-        RuntimeError: If the API call fails.
-    """
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-
-    # Extract session profile for personalization
-    profile = extract_profile_signals(user_message, history)
-
-    # Determine tool_choice based on query classification
-    if is_medical_query(user_message):
-        tool_choice = "none"
-    elif is_vague_query(user_message):
-        tool_choice = "none"
-    elif is_form_unknown_query(user_message, history):
-        tool_choice = "none"
-    elif is_vape_hardware_unknown_query(user_message, history):
-        tool_choice = "none"
-    elif is_price_feedback_query(user_message):
-        tool_choice = "none"
-    elif is_generic_rejection_query(user_message):
-        tool_choice = "none"
-    else:
-        tool_choice = "auto"
-
+    profile: dict | None,
+    is_beginner: bool,
+) -> list[dict]:
+    """Assemble messages list and inject session context injections."""
     messages = build_messages(history, user_message, profile)
 
     if is_beginner:
@@ -783,6 +766,39 @@ def get_recommendation(
             "Do NOT write 'let me find' or 'I'll look for' anything. Just ask: 'What price range works for you?'"
         )
 
+    return messages
+
+
+def _execute_tool_call(tool_call, product_manager) -> dict:
+    """Dispatch a single tool call and return its result dict."""
+    fn_name = tool_call.function.name
+    try:
+        fn_args = json.loads(tool_call.function.arguments)
+    except json.JSONDecodeError:
+        fn_args = {}
+
+    logger.info("[Agent] Calling tool: %s args=%s", fn_name, fn_args)
+
+    if fn_name == "smart_search":
+        return product_manager.search_products(**fn_args)
+    if fn_name == "get_product_details":
+        pid = fn_args.get("product_id", "")
+        return product_manager.get_product_by_id(pid) or {}
+    return {"error": f"Unknown tool: {fn_name}"}
+
+
+def _run_agent_loop(
+    client,
+    messages: list[dict],
+    tool_choice: str,
+    product_manager,
+) -> str:
+    """
+    Execute the Agent Loop: LLM call → tool execution → repeat until final answer.
+
+    Raises:
+        RuntimeError: If the API call fails.
+    """
     try:
         # Agent loop — max 3 iterations to prevent infinite loops
         for iteration in range(3):
@@ -805,24 +821,9 @@ def get_recommendation(
             # Execute each tool call
             search_had_results = False
             for tool_call in msg.tool_calls:
-                fn_name = tool_call.function.name
-                try:
-                    fn_args = json.loads(tool_call.function.arguments)
-                except json.JSONDecodeError:
-                    fn_args = {}
-
-                logger.info("[Agent] Calling tool: %s args=%s", fn_name, fn_args)
-
-                if fn_name == "smart_search":
-                    result = product_manager.search_products(**fn_args)
-                    if result.get("total", 0) > 0:
-                        search_had_results = True
-                elif fn_name == "get_product_details":
-                    pid = fn_args.get("product_id", "")
-                    result = product_manager.get_product_by_id(pid) or {}
-                else:
-                    result = {"error": f"Unknown tool: {fn_name}"}
-
+                result = _execute_tool_call(tool_call, product_manager)
+                if tool_call.function.name == "smart_search" and result.get("total", 0) > 0:
+                    search_had_results = True
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -846,3 +847,30 @@ def get_recommendation(
         raise RuntimeError("OpenAI API rate limit exceeded.") from exc
     except openai.APIError as exc:
         raise RuntimeError(f"OpenAI API error: {exc}") from exc
+
+
+def get_recommendation(
+    history: list[dict],
+    user_message: str,
+    product_manager,  # ProductManager instance
+    is_beginner: bool = False,
+) -> str:
+    """
+    Run the Agent Loop: call LLM → execute tool calls → call LLM again until done.
+
+    Args:
+        history: Previous messages as list of {role, content} dicts.
+        user_message: Current user message text.
+        product_manager: ProductManager instance for tool execution.
+
+    Returns:
+        Final assistant reply text.
+
+    Raises:
+        RuntimeError: If the API call fails.
+    """
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+    profile = extract_profile_signals(user_message, history)
+    tool_choice = _determine_tool_choice(user_message, history)
+    messages = _prepare_messages(history, user_message, profile, is_beginner)
+    return _run_agent_loop(client, messages, tool_choice, product_manager)

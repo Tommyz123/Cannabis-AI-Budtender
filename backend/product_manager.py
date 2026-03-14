@@ -178,7 +178,7 @@ class ProductManager:
         """
         df = self._df.copy()
 
-        # list_sub_types: return category overview
+        # list_sub_types: return category overview (early return, skip filter pipeline)
         if list_sub_types:
             overview = {}
             for cat, cdf in self._category_index.items():
@@ -186,6 +186,32 @@ class ProductManager:
                 overview[cat] = {"count": len(cdf), "subcategories": subs}
             return {"overview": overview}
 
+        df = self._apply_filters(
+            df, category, effects, exclude_effects, exclude_categories,
+            min_thc, max_thc, max_price, budget_target, time_of_day,
+            activity_scenario, unit_weight, query, is_beginner,
+        )
+        df = self._sort_results(df, budget_target)
+        return self._build_result(df, limit)
+
+    def _apply_filters(
+        self,
+        df: pd.DataFrame,
+        category: str | None,
+        effects: list[str] | None,
+        exclude_effects: list[str] | None,
+        exclude_categories: list[str] | None,
+        min_thc: float | None,
+        max_thc: float | None,
+        max_price: float | None,
+        budget_target: float | None,
+        time_of_day: str | None,
+        activity_scenario: str | None,
+        unit_weight: str | None,
+        query: str,
+        is_beginner: bool,
+    ) -> pd.DataFrame:
+        """Apply all search filters to the DataFrame and return filtered result."""
         # 1. Category filter
         if category:
             cat_lower = category.lower()
@@ -263,11 +289,14 @@ class ProductManager:
             mask |= df["HardwareType"].str.contains(query, case=False, na=False)
             df = df[mask]
 
-        # 11. Beginner safety filter
+        # Beginner safety filter
         if is_beginner:
             df = self._apply_beginner_filter(df, _BEGINNER_EXPERIENCE)
 
-        # Sort: larger unit weight first, then by price descending (premium first)
+        return df
+
+    def _sort_results(self, df: pd.DataFrame, budget_target: float | None) -> pd.DataFrame:
+        """Sort filtered results: by price proximity to budget, or by weight + price."""
         def _parse_weight(wt):
             """Extract numeric value from weight string like '1g', '0.5g', '2g'."""
             try:
@@ -287,10 +316,12 @@ class ProductManager:
                 df = df.sort_values(["_weight_num", "Price"], ascending=[False, False])
             df = df.drop(columns=["_weight_num"])
 
-        # Limit results
+        return df
+
+    def _build_result(self, df: pd.DataFrame, limit: int) -> dict:
+        """Assemble the final result dict from filtered and sorted DataFrame."""
         matched_count = len(df)
         df = df.head(limit)
-
         products = [_row_to_compact(row) for _, row in df.iterrows()]
         return {"products": products, "total": matched_count}
 

@@ -324,3 +324,14 @@
 **测试结果：**
 - tc_A5a：规则✅ 标准3/3 → 通过
 - 全集：8/8 通过（100%），无回退
+
+## [2026-03-13] 重构 | 文件内函数拆分：product_manager.py 和 llm_service.py
+
+**变更内容：**
+- `backend/product_manager.py`：将 `search_products()` 的过滤、排序、结果组装逻辑拆分为三个私有方法：`_apply_filters()`、`_sort_results()`、`_build_result()`。公开接口、行为、返回值均不变。
+- `backend/llm_service.py`：将 `get_recommendation()` 的四个职责拆分为四个私有函数：`_determine_tool_choice()`、`_prepare_messages()`、`_execute_tool_call()`、`_run_agent_loop()`。`get_recommendation()` 仅保留协调逻辑。公开接口不变。
+
+**涉及文件：** `backend/product_manager.py`、`backend/llm_service.py`
+
+**测试结果：**
+- 全部 50 个测试通过，无回退
