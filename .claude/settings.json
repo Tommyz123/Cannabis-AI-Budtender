@@ -1,0 +1,31 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /mnt/c/Users/zhi89/Desktop/cannabis_AI_BUDTENDER/scripts/health_check.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /mnt/c/Users/zhi89/Desktop/cannabis_AI_BUDTENDER/scripts/logging_reminder.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(venv/bin/python -m pytest *)",
+      "Bash(venv/bin/python eval/*)"
+    ]
+  }
+}
