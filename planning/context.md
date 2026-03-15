@@ -41,7 +41,8 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `ProductManager.load(csv_path) → None` — 加载 CSV，建立索引
 - `ProductManager.get_all_compact_json() → str` — 全量产品 compact JSON
 - `ProductManager.get_beginner_compact_json() → str` — 新手安全过滤产品 JSON（含降级策略）
-- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）；total 返回实际命中数；有 budget_target 时按价格距离升序排序；free-text query 覆盖 FlavorProfile + HardwareType 列
+- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit, is_beginner) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）；total 返回实际命中数；有 budget_target 时按价格距离升序排序；free-text query 覆盖 FlavorProfile + HardwareType 列；is_beginner=True 时套用新手安全过滤
+- `ProductManager.get_category_summary_json() → str` — 返回品类数量统计 JSON（用于首轮对话最小 token 上下文）
 - `ProductManager.get_product_by_id(product_id) → dict | None` — 按 ID 返回单个产品
 - `ProductManager.total_count → int` — 已加载产品数
 - `ProductManager.category_index → dict` — 品类 → DataFrame 映射
@@ -53,6 +54,9 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `is_medical_query(user_message) → bool` — 检测医疗查询
 - `is_vague_query(user_message) → bool` — 检测模糊查询
 - `is_form_unknown_query(user_message, history) → bool` — 检测有效果但无形式的查询
+- `is_price_feedback_query(user_message) → bool` — 检测价格反馈查询（太贵/太便宜等）
+- `is_generic_rejection_query(user_message) → bool` — 检测通用拒绝查询（不喜欢/换一个等）
+- `is_vape_hardware_unknown_query(user_message, history) → bool` — 检测 vape 硬件类型未知查询
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
 - `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表（不注入产品 JSON）

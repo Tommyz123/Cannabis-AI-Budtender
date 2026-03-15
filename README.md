@@ -105,7 +105,7 @@ Set `is_beginner: true` for first-time customers. The backend injects a session-
 ## Project Structure
 
 ```
-AI_BUDTENDER2/
+cannabis_AI_BUDTENDER/
 ├── backend/
 │   ├── main.py            # FastAPI app, routes
 │   ├── llm_service.py     # Agent loop, tool calling, prompt logic
@@ -142,7 +142,7 @@ python eval/run_eval.py
 
 Test cases are defined in `golden_dataset_v1.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
 
-Current coverage: **12 test cases** across discovery flow and recommendation refinement scenarios (12/12 passing).
+Current coverage: **13 test cases** across discovery flow and recommendation refinement scenarios (12/13 passing; tc_A6 is a known non-deterministic edge case).
 
 ## License
 
