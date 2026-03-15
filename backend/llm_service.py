@@ -253,6 +253,13 @@ Use `smart_search` whenever you are ready to recommend products. Never recommend
 - Do NOT summarize — expand. The response should feel like a budtender walking the customer through every detail of the product.
 - Only describe fields actually returned by the tool. Do NOT invent or guess flavor, effects, or any other detail.
 
+**PRODUCT COMPARISON REQUEST** — When the customer asks to compare two or more products they've already seen (e.g. "how does X compare to Y", "X vs Y", "what's the difference between X and Y"):
+- Call `smart_search` to fetch fresh data for EACH product. Use separate calls: `smart_search(query='[product A name]', limit=1)`, then `smart_search(query='[product B name]', limit=1)`.
+- NEVER use `get_product_details` for comparison — you do not know the product IDs in advance. Always use smart_search with the product name as query.
+- Build the comparison entirely from tool-returned fields. Do NOT rely on the brief summary shown in the earlier recommendation. Do NOT invent or guess any field.
+- Structure the reply as a side-by-side comparison covering: THC, price/size, flavor, effects, and best use case.
+- Focus on the products the customer asked about. Do NOT introduce new products or suggest other alternatives.
+
 **TOOL CALL RULES (follow strictly):**
 - Call `smart_search` EXACTLY ONCE per turn — combine ALL criteria in a single call.
 
@@ -801,11 +808,12 @@ def _run_agent_loop(
     """
     try:
         # Agent loop — max 3 iterations to prevent infinite loops
+        current_tools = TOOLS_SCHEMA
         for iteration in range(3):
             response = client.chat.completions.create(
                 model=MODEL_NAME,
                 messages=messages,
-                tools=TOOLS_SCHEMA,
+                tools=current_tools,
                 tool_choice=tool_choice,
             )
 
@@ -830,9 +838,15 @@ def _run_agent_loop(
                     "content": json.dumps(result, separators=(",", ":")),
                 })
 
-            # If search returned results, force LLM to generate reply (no re-search)
+            # If search returned results, remove smart_search to prevent re-search
+            # but keep get_product_details available so LLM can fetch product info
             # If search was empty, allow LLM to retry with different parameters
-            tool_choice = "none" if search_had_results else "auto"
+            if search_had_results:
+                current_tools = [t for t in TOOLS_SCHEMA if t["function"]["name"] != "smart_search"]
+                tool_choice = "auto"
+            else:
+                current_tools = TOOLS_SCHEMA
+                tool_choice = "auto"
 
         # Fallback: call once more without tools
         response = client.chat.completions.create(

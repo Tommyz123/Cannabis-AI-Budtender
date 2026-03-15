@@ -3,6 +3,16 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-14] 新增 | tc_B5 替换为产品对比场景 + Prompt 新增产品对比规则
+
+- **变更内容**：
+  1. `golden_dataset_v1.json` — 将 tc_B5 从"单产品详情查询"替换为"双产品对比"场景（Benzina vs Hindu Kush），避免与 tc_B4 行为重复；顶层 description 更新为 "Direction B: Recommendation Refinement (5 TCs)"
+  2. `backend/llm_service.py` — TOOL USE 部分新增 **PRODUCT COMPARISON REQUEST** 规则：对比查询时必须分别调用 smart_search(query=产品名)，禁止使用 get_product_details（LLM 不知道 product_id）
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v1.json`
+- **测试结果**：
+  - tc_B5 单 TC：连续 2 次 100% 通过（smart_search x2 正确调用）
+  - 全集回归：12/13（tc_A6 偶发性失败，为 LLM 非确定性波动，单 TC 连续 3 次通过，与本次改动无关）
+
 ## [2026-03-11] 修复 | 6 个产品可信度问题修复（搜索缺口、total 语义、预算排序、Beginner 打通）
 
 - **变更内容**：
@@ -335,3 +345,22 @@
 
 **测试结果：**
 - 全部 50 个测试通过，无回退
+
+## [2026-03-14] 修复 | 修复 get_product_details 被阻断 + 新增 tc_B5
+
+**变更内容：**
+
+1. `backend/llm_service.py` `_run_agent_loop`（第 804 行附近）：
+   - 原逻辑：有搜索结果时 `tool_choice="none"`，一刀切禁掉所有工具
+   - 新逻辑：有搜索结果时动态裁剪 tools 列表，移除 `smart_search` 保留 `get_product_details`，`tool_choice` 保持 `"auto"`
+   - 效果：LLM 不能重复搜索，但仍可调 `get_product_details` 获取产品详情
+
+2. `golden_dataset_v1.json`：
+   - 新增 tc_B5（"Tell me more about the Hindu Kush"，multi-turn product detail 场景）
+   - `total_cases` 从 12 更新为 13
+
+**涉及文件：** `backend/llm_service.py`、`golden_dataset_v1.json`
+
+**测试结果：**
+- tc_B5 单 TC：连续 2 次 100% 通过
+- 全集回归：13/13 通过（100%），无回退

@@ -1,13 +1,13 @@
 {
   "version": "2.1",
-  "description": "Golden dataset for Cannabis AI Budtender evaluation - v2.1 covers Direction A: Discovery Flow (8 TCs) + Direction B: Recommendation Refinement (4 TCs). AI Budtender positioning: warm professional sales consultant, guides step by step, never pushes product too early. All recommendation scenarios display highest-price product first.",
+  "description": "Golden dataset for Cannabis AI Budtender evaluation - v2.1 covers Direction A: Discovery Flow (8 TCs) + Direction B: Recommendation Refinement (5 TCs). AI Budtender positioning: warm professional sales consultant, guides step by step, never pushes product too early. All recommendation scenarios display highest-price product first.",
   "global_rules": [
     "All recommendation scenarios: display highest-priced product first",
     "One question per turn only",
     "Tone: professional and warm, like a senior sales consultant"
   ],
   "directions": ["A - Discovery Flow", "B - Recommendation Refinement"],
-  "total_cases": 12,
+  "total_cases": 13,
   "test_cases": [
     {
       "id": "tc_A1",
@@ -365,6 +365,38 @@
         "没有捏造产品信息（只描述工具返回的字段）"
       ],
       "tags": ["recommendation-refinement", "product-detail", "get-product-details"]
+    },
+    {
+      "id": "tc_B5",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P1",
+      "description": "顾客要求对比推荐列表中两个产品 → 应调工具获取完整数据，输出对比结构，不引入其他产品",
+      "input": {
+        "user_message": "How does Benzina compare to Hindu Kush?",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "I want an indica flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some great indica flower options:\n\n1. **Benzina** by Florist Farms\nIndica | Size: 7g | Price: $70 | THC: 26%\nPeppery and herbal notes, delivering happy and relaxed vibes.\n\n2. **Hindu Kush | Jar** by Dank\nIndica | Size: 3.5g | Price: $53 | THC: 29%\nEarthy and herbal flavors, known for its strong relaxing and sleepy effects.\n\n3. **Bubba Kush** by Etain\nIndica | Size: 3.5g | Price: $45 | THC: 24%\nRich coffee and chocolate notes, heavy and sedating.\n\nAny of these catch your interest?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "note": "LLM 应调工具分别获取两个产品的完整数据。可两次 smart_search，或一次含多个产品名的搜索。两种路径均可接受。"
+      },
+      "judge_criteria": [
+        "调用了工具获取产品数据（不能只依赖对话历史中的简略字段）",
+        "回复同时覆盖 Benzina 和 Hindu Kush，形成对比结构",
+        "对比维度合理，至少涵盖以下两项以上：THC、价格/规格、flavor/effects、适合场景",
+        "聚焦在这两个产品，没有引入其他产品推荐",
+        "没有捏造或猜测产品字段（信息来自工具返回数据）"
+      ],
+      "tags": ["recommendation-refinement", "product-comparison", "multi-turn", "tool-call"]
     }
   ]
 }
