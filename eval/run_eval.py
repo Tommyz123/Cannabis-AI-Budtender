@@ -43,7 +43,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── 配置 ──────────────────────────────────────────────────────────────────────
-DATASET_PATH = PROJECT_ROOT / "golden_dataset_v1.json"
+DATASET_PATH = PROJECT_ROOT / "golden_dataset_v2.json"
 CSV_PATH = PROJECT_ROOT / "data" / "NYE4.0_v3.csv"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 
@@ -136,6 +136,14 @@ def _check_rules(tc: dict, tool_calls_log: list) -> tuple[bool, list[dict]]:
         })
         if not called:
             all_pass = False
+    elif tool_should == "optional":
+        # Tool call is acceptable but not required — skip rule check
+        rule_results.append({
+            "rule": "tool_optional",
+            "expected": "optional",
+            "pass": True,
+            "reason": "工具调用为可选，跳过规则检查",
+        })
     elif tool_should is None:
         called = len(tool_calls_log) > 0
         rule_results.append({
