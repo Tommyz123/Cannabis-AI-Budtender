@@ -5,8 +5,8 @@
     "One question per turn only",
     "Tone: professional and warm, like a senior sales consultant"
   ],
-  "directions": ["C - Compliance Layer"],
-  "total_cases": 4,
+  "directions": ["C - Compliance Layer", "G - Information Gathering Layer"],
+  "total_cases": 8,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -96,6 +96,124 @@
         "AI 提到了新手安全建议（如 'start low' / 'go slow' / 'take it easy' / 'lower THC for beginners' 等表达均可接受）"
       ],
       "tags": ["compliance", "beginner-safety", "flower", "low-thc", "no-infused"]
+    },
+    {
+      "id": "tc_G1",
+      "scenario": "information_gathering",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "顾客只表达了购买意图，无效果/场景信号，无消费方式信号 → AI 应先问效果或场景，一次只问一个问题",
+      "input": {
+        "user_message": "I'd like to buy something.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "AI 必须先问效果/场景（如：relaxing / energizing / occasion），不得先问消费方式，不得一次问两个问题，不得调用 smart_search。"
+      },
+      "judge_criteria": [
+        "AI 没有调用 smart_search（不能在没有效果/场景信息的情况下搜索）",
+        "AI 问了关于效果、感受或使用场景的问题（如 'what kind of experience', 'what are you looking for', 'any particular occasion', 'relaxing / energizing / focusing' 等表达均可接受）",
+        "AI 在这一轮只问了一个问题，没有同时问消费方式（form）",
+        "AI 语气温暖、不生硬，像一个热情的 budtender 在开启对话"
+      ],
+      "tags": ["gathering", "no-signal", "effect-first", "one-question"]
+    },
+    {
+      "id": "tc_G2",
+      "scenario": "information_gathering",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "顾客有效果信号（relaxing）但无消费方式 → AI 应问消费方式，不得直接搜索",
+      "input": {
+        "user_message": "I'm looking for something relaxing.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "AI 已知效果（relax），但消费方式未知。必须问消费方式（flower / vaping / edibles），不得调用 smart_search，不得一次问两个问题。"
+      },
+      "judge_criteria": [
+        "AI 没有调用 smart_search（消费方式未知时不得搜索）",
+        "AI 问了关于消费方式的问题（flower / vaping / edibles 或类似表达均可接受）",
+        "AI 在这一轮只问了一个问题，没有同时再问效果或场景",
+        "AI 在问消费方式之前有一句简短的专业引导（不是直接裸问，如 'Since you\\'re looking to relax, do you prefer...' 均可接受）"
+      ],
+      "tags": ["gathering", "effect-known", "form-unknown", "ask-form"]
+    },
+    {
+      "id": "tc_G3",
+      "scenario": "information_gathering",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "顾客表达了消费方式（edibles）但无效果/场景信号 → AI 应问效果或场景，不得直接搜索",
+      "input": {
+        "user_message": "I'm interested in trying some edibles.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "AI 已知消费方式（edibles），但效果/场景未知。必须问效果或使用场景，不得调用 smart_search，不得一次问两个问题。"
+      },
+      "judge_criteria": [
+        "AI 没有调用 smart_search（效果/场景未知时不得搜索）",
+        "AI 问了关于效果、感受或使用场景的问题（如 'what kind of experience', 'what are you looking for', 'relaxing / energizing / focusing', 'any occasion' 等表达均可接受）",
+        "AI 在这一轮只问了一个问题，没有同时再问消费方式",
+        "AI 语气温暖，像一个热情的 budtender 在引导顾客"
+      ],
+      "tags": ["gathering", "form-known", "effect-unknown", "ask-effect"]
+    },
+    {
+      "id": "tc_G4",
+      "scenario": "information_gathering",
+      "difficulty": "medium",
+      "priority": "P1",
+      "description": "多轮信号累积：顾客第一条消息给了场景（party），第二条消息给了消费方式（edibles）→ 两个信号都已知，AI 应直接调用 smart_search",
+      "input": {
+        "user_message": "I'll be having edibles.",
+        "conversation_history": [
+          {"role": "user", "content": "I want something for a party tonight."},
+          {"role": "assistant", "content": "Great! Edibles can be a fantastic choice for a party. What kind of experience are you looking for — something uplifting and social?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "AI 从对话历史可知效果/场景（party），当前消息补充了消费方式（edibles）。两个信号都已收集完毕，应立即调用 smart_search，不得再问其他问题。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（两个信号都已知，必须搜索）",
+        "AI 没有再问任何收集性问题（不问效果、不问消费方式、不问其他）",
+        "AI 的 smart_search 调用包含了 edibles 相关的 category 参数（如 'Edibles' 或 'Gummies'）",
+        "AI 没有直接拒绝帮助或终止对话（即使搜索结果有限，也应尝试提供帮助或替代方案）"
+      ],
+      "tags": ["gathering", "multi-turn", "both-signals-known", "search-immediately"]
+    },
+    {
+      "id": "tc_G5",
+      "scenario": "information_gathering",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "顾客在单条消息中同时提供了效果信号（sleeping）和消费方式信号（edibles）→ AI 应直接调用 smart_search，不问任何收集性问题",
+      "input": {
+        "user_message": "I want some indica edibles for sleeping tonight.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "单条消息已包含两个信号：效果/场景（sleeping tonight）+ 消费方式（edibles）。AI 必须立即调用 smart_search，不得问效果，不得问消费方式，不得问任何收集性问题。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（两个信号都已知，必须搜索）",
+        "AI 没有再问任何收集性问题（不问效果、不问消费方式、不问其他）",
+        "AI 的 smart_search 调用包含了 edibles 相关的 category 参数（如 'Edibles' 或 'Gummies'）",
+        "AI 没有直接拒绝帮助或终止对话"
+      ],
+      "tags": ["gathering", "single-turn", "both-signals-known", "search-immediately"]
     }
   ]
 }

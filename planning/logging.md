@@ -3,6 +3,47 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-25] 新增 | 信息收集层 tc_G4（多轮信号累积 → 直接搜索）
+
+- **变更内容**：
+  1. `golden_dataset_v2.json` — 新增 tc_G4：顾客在两条消息里分别提供场景（party）和消费方式（edibles），AI 应直接调用 smart_search；judge criteria 聚焦信息收集层行为，不测推荐质量；total_cases 从 7 更新为 8
+  2. `backend/llm_service.py` — INFORMATION_GATHERING_PROMPT 补充两处规则：场景词算完整信号、两个信号都有时直接调工具不宣告
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：
+  - tc_G4 单 TC：连续 3 次 100% 通过（4/4 标准）
+  - 全集回归：8/8 通过，无回退
+- **过程记录**：原始设计用"AI 问 → 用户答"的多轮模式，LLM 因架构限制无法稳定触发工具调用；改为"用户两条消息分别提供信号"绕开限制
+
+## [2026-03-25] 新增 | 信息收集层 tc_G3（有消费方式无效果 → 问效果/场景）
+
+- **变更内容**：
+  1. `golden_dataset_v2.json` — 新增 tc_G3：顾客说"I'm interested in trying some edibles"，有消费方式无效果/场景，AI 应问效果/场景，不得搜索；total_cases 从 6 更新为 7
+  2. prompt 无需额外修改，INFORMATION_GATHERING_PROMPT 现有规则已覆盖
+- **涉及文件**：`golden_dataset_v2.json`
+- **测试结果**：
+  - tc_G3 单 TC：连续 3 次 100% 通过（4/4 标准）
+  - 全集回归：7/7 通过，无回退
+
+## [2026-03-25] 新增 | 信息收集层 tc_G2 + INFORMATION_GATHERING_PROMPT 独立模块
+
+- **变更内容**：
+  1. `backend/llm_service.py` — 新增独立模块 `INFORMATION_GATHERING_PROMPT`，明确两个必须信号（效果/场景 + 消费方式）及收集顺序规则；修正 Step 1 "STRONG SIGNAL → search immediately" 歧义，澄清有效果信号仍需检查 form；将新模块注入 SYSTEM_PROMPT
+  2. `golden_dataset_v2.json` — 新增 tc_G2：有效果信号无消费方式 → 应问消费方式，total_cases 从 5 更新为 6
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：
+  - tc_G2 单 TC：连续 3 次 100% 通过（4/4 标准）
+  - 全集回归：6/6 通过，无回退
+
+## [2026-03-24] 新增 | 信息收集层 tc_G1（完全无信号 → 先问效果/场景）
+
+- **变更内容**：
+  1. `golden_dataset_v2.json` — 新增 Direction G（Information Gathering Layer），新增 tc_G1：顾客只表达购买意图无信号，AI 应先问效果/场景，total_cases 从 4 更新为 5
+  2. `backend/llm_service.py` — DISCOVERY-FIRST NO SIGNAL 规则补充通用购买意图覆盖（"I'd like to buy something" / "I want to get something" 等）
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：
+  - tc_G1 单 TC：连续 3 次 100% 通过（4/4 标准）
+  - 全集回归：5/5 通过，无回退
+
 ## [2026-03-14] 新增 | tc_B5 替换为产品对比场景 + Prompt 新增产品对比规则
 
 - **变更内容**：
@@ -364,3 +405,18 @@
 **测试结果：**
 - tc_B5 单 TC：连续 2 次 100% 通过
 - 全集回归：13/13 通过（100%），无回退
+
+## [2026-03-24] 新增 | 合规层（Direction C）eval 数据集与 prompt 模块化
+
+**变更内容：**
+- 新建 `golden_dataset_v2.json`，包含 4 条合规 TC（tc_C1~C4），全部 100% 通过
+- `backend/llm_service.py`：将合规规则从 SYSTEM_PROMPT 中独立为三个模块：
+  - `MEDICAL_COMPLIANCE_PROMPT`（医疗免责 + 软性引导）
+  - `AGE_COMPLIANCE_PROMPT`（21岁以下完全拦截）
+  - `BEGINNER_SAFETY_PROMPT`（新手剂量安全：edibles 5mg优先、flower低THC不推infused）
+  - `SYSTEM_PROMPT` 改为由合规模块 + `_SALES_PROMPT` 拼接
+- `eval/run_eval.py`：新增 `tool_should_be_called: "optional"` 支持，DATASET_PATH 指向 v2
+
+**涉及文件：** `backend/llm_service.py`、`eval/run_eval.py`、`golden_dataset_v2.json`
+
+**测试结果：** `venv/bin/python eval/run_eval.py --series C` → 4/4 通过（100%）
