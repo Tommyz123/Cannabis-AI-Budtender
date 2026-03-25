@@ -5,8 +5,8 @@
     "One question per turn only",
     "Tone: professional and warm, like a senior sales consultant"
   ],
-  "directions": ["C - Compliance Layer", "G - Information Gathering Layer"],
-  "total_cases": 8,
+  "directions": ["C - Compliance Layer", "G - Information Gathering Layer", "B - Recommendation Refinement"],
+  "total_cases": 14,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -214,6 +214,138 @@
         "AI 没有直接拒绝帮助或终止对话"
       ],
       "tags": ["gathering", "single-turn", "both-signals-known", "search-immediately"]
+    },
+    {
+      "id": "tc_B1",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "顾客看到推荐后说太贵 → AI 应问预算区间，不得直接重搜",
+      "input": {
+        "user_message": "these are a bit pricey, anything cheaper?",
+        "conversation_history": [
+          {"role": "user", "content": "I want an indica flower"},
+          {"role": "assistant", "content": "Here are some fantastic indica flower options for you:\n\n1. **Papaya Cake** by Aetema\n   Indica-Hybrid | Size: 28g | Price: $270 | THC: 25%\n   Tropical notes of mango and apricot — deeply relaxing and perfect for unwinding.\n\n2. **Harvest | Skywalker OG** by Harvest\n   Indica-Hybrid | Size: 28g | Price: $175 | THC: 22%\n   Earthy and floral, known for its sleepy and relaxed effects.\n\n3. **Benzina** by Florist Farms\n   Indica | Size: 7g | Price: $70 | THC: 26%\n   Peppery and herbal notes, delivering happy and relaxed vibes.\n\nAny of these catch your interest?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "AI 必须先问价格区间，不得调用 smart_search 重搜。未知具体预算时不得直接搜索。"
+      },
+      "judge_criteria": [
+        "AI 没有调用 smart_search（价格区间未知时不得重搜）",
+        "AI 询问了顾客的价格区间或预算（如 'What price range works for you?' 或类似表达均可接受）",
+        "AI 只问了一个问题，没有同时再问品类或效果（已知信息不再询问）",
+        "AI 语气温和，没有让顾客感到被质问"
+      ],
+      "tags": ["refinement", "price-feedback", "ask-budget", "no-search"]
+    },
+    {
+      "id": "tc_B2",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "顾客看到高 THC vape 推荐后说太强 → AI 应降低 THC 重搜，保留 category=Vaporizers",
+      "input": {
+        "user_message": "that feels a bit too strong for me, something lighter?",
+        "conversation_history": [
+          {"role": "user", "content": "I want to vape something for relaxing"},
+          {"role": "assistant", "content": "Since you're looking for something relaxing, that usually points toward indica or hybrid. Are you looking for a **disposable** (all-in-one, no extras needed), a **510 cartridge** (works with any standard 510 battery), or a **pod** system? Just a heads-up — pod systems require a dedicated compatible battery, unlike 510 batteries which are universal."},
+          {"role": "user", "content": "510 cartridge"},
+          {"role": "assistant", "content": "Here are some great 510 cartridge options for relaxing:\n\n1. **Papaya Punch** by Florist Farms\n   Price: $55 | THC: 85%\n   A rich indica-leaning cart with tropical and sweet notes, delivering deep relaxation.\n\n2. **Northern Lights** by Aetema\n   Price: $48 | THC: 82%\n   Earthy and pine-forward, this classic indica cart wraps you in a warm, sleepy calm.\n\nAny of these feel like what you had in mind?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "AI 应以低于已推荐 THC 的上限（如 max_thc=70）重搜，必须保留 category=Vaporizers，不得重新询问 hardware type 或效果。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（强度反馈 → 必须重搜）",
+        "smart_search 包含 max_thc 参数（THC 上限低于已推荐的 82~85%，如 max_thc=70 或更低）",
+        "smart_search 保留了 category=Vaporizers（不丢失已知品类）",
+        "AI 没有重新询问 hardware type 或效果（已知信息不再询问）"
+      ],
+      "tags": ["refinement", "thc-feedback", "re-search", "max-thc"]
+    },
+    {
+      "id": "tc_B3",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "顾客对推荐结果表示不满意但未说明原因 → AI 应问具体哪里不满意，不得直接重搜",
+      "input": {
+        "user_message": "I don't really like any of these",
+        "conversation_history": [
+          {"role": "user", "content": "I want some edibles for relaxing"},
+          {"role": "assistant", "content": "Here are some great edible options to help you relax:\n\n1. **Midnight Blueberry Gummies** by Kiva\n   Price: $35 | THC: 10mg per piece\n   These gummies deliver a calm, body-relaxing experience with a sweet blueberry flavor.\n\n2. **Mango Dream Chews** by Wana\n   Price: $28 | THC: 5mg per piece\n   Light and easy to dose, these mango-flavored chews offer gentle relaxation.\n\n3. **Dark Chocolate Bar** by Défoncé\n   Price: $22 | THC: 5mg per piece\n   A rich dark chocolate bar — perfect for a relaxed evening treat.\n\nAny of these appeal to you, or would you like to explore a different direction?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "顾客未说明具体不满原因，AI 必须先问原因（价格/效果/口味/类型），不得调用 smart_search 重搜。"
+      },
+      "judge_criteria": [
+        "AI 没有调用 smart_search（原因未知时不得重搜）",
+        "AI 询问了具体哪里不满意（价格 / 效果 / 口味 / 类型等，原文或意译均可接受）",
+        "AI 只问了一个问题，没有同时再问其他信息",
+        "AI 语气温和，没有让顾客感到被质问"
+      ],
+      "tags": ["refinement", "generic-rejection", "ask-reason", "no-search"]
+    },
+    {
+      "id": "tc_B4",
+      "scenario": "recommendation_refinement",
+      "difficulty": "easy",
+      "priority": "P1",
+      "description": "顾客点名询问推荐列表中某产品的更多详情 → AI 应调工具获取完整数据，不得凭记忆回答",
+      "input": {
+        "user_message": "tell me more about Papaya Cake",
+        "conversation_history": [
+          {"role": "user", "content": "I want an indica flower"},
+          {"role": "assistant", "content": "Here are some fantastic indica flower options for you:\n\n1. **Papaya Cake** by Aetema\n   Indica-Hybrid | Size: 28g | Price: $270 | THC: 25%\n   Tropical notes of mango and apricot — deeply relaxing and perfect for unwinding.\n\n2. **Harvest | Skywalker OG** by Harvest\n   Indica-Hybrid | Size: 28g | Price: $175 | THC: 22%\n   Earthy and floral, known for its sleepy and relaxed effects.\n\n3. **Benzina** by Florist Farms\n   Indica | Size: 7g | Price: $70 | THC: 26%\n   Peppery and herbal notes, delivering happy and relaxed vibes.\n\nAny of these catch your interest?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "AI 必须调用工具获取 Papaya Cake 的完整产品数据，不得仅凭对话历史中的简略字段回答。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（query 包含 'Papaya Cake'）",
+        "回复包含比原推荐更丰富的产品信息（如完整 flavor、effects、dosing 建议等）",
+        "AI 没有捏造产品信息（只描述工具返回的字段）",
+        "AI 没有直接拒绝或说不知道"
+      ],
+      "tags": ["refinement", "product-detail", "tool-call", "smart-search"]
+    },
+    {
+      "id": "tc_B5",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P1",
+      "description": "顾客要求对比推荐列表中两个产品 → AI 应分别调 smart_search 获取完整数据，输出对比结构，不引入其他产品",
+      "input": {
+        "user_message": "How does Benzina compare to Hindu Kush?",
+        "conversation_history": [
+          {"role": "user", "content": "I want an indica flower"},
+          {"role": "assistant", "content": "Here are some great indica flower options:\n\n1. **Benzina** by Florist Farms\n   Indica | Size: 7g | Price: $70 | THC: 26%\n   Peppery and herbal notes, delivering happy and relaxed vibes.\n\n2. **Hindu Kush | Jar** by Dank\n   Indica | Size: 3.5g | Price: $53 | THC: 29%\n   Earthy and herbal flavors, known for its strong relaxing and sleepy effects.\n\n3. **Bubba Kush** by Etain\n   Indica | Size: 3.5g | Price: $45 | THC: 24%\n   Rich coffee and chocolate notes, heavy and sedating.\n\nAny of these catch your interest?"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "AI 必须分别调用 smart_search(query='Benzina', limit=1) 和 smart_search(query='Hindu Kush', limit=1) 获取完整数据，不得使用 get_product_details，不得引入其他产品。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search 获取产品数据（不能只依赖对话历史中的简略字段）",
+        "回复同时覆盖 Benzina 和 Hindu Kush，形成对比结构",
+        "对比维度合理，至少涵盖以下两项以上：THC、价格/规格、flavor/effects、适合场景",
+        "聚焦在这两个产品，没有引入其他产品推荐"
+      ],
+      "tags": ["refinement", "product-comparison", "multi-search", "tool-call"]
     }
   ]
 }

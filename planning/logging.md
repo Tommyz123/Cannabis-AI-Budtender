@@ -3,6 +3,14 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-25] 新增 | Direction B（推荐精化）模块化 + tc_B1~B5
+
+- **变更内容**：
+  1. `backend/llm_service.py` — 新增 `RECOMMENDATION_REFINEMENT_PROMPT` 独立模块，从 `_SALES_PROMPT` 迁移：HARD GATE Price Feedback、HARD GATE Generic Rejection、Strength Feedback、PRODUCT DETAILS REQUEST、PRODUCT COMPARISON REQUEST；注入 SYSTEM_PROMPT（顺序：MEDICAL → AGE → BEGINNER → INFORMATION_GATHERING → RECOMMENDATION_REFINEMENT → _SALES_PROMPT）
+  2. `golden_dataset_v2.json` — 新增 tc_B1~B5，directions 更新为 C+G+B，total_cases=14
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：全集 14/14 通过（100%），无回退
+
 ## [2026-03-25] 新增 | 信息收集层 tc_G4（多轮信号累积 → 直接搜索）
 
 - **变更内容**：
