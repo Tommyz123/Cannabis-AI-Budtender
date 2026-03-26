@@ -102,6 +102,19 @@ RECOMMENDATION_REFINEMENT_PROMPT = """## RECOMMENDATION REFINEMENT
 
 **Strength Feedback**: If customer's feedback says "too strong" / "too potent" / "something lighter" → add max_thc constraint set below the THC levels shown in previous recommendations (e.g. max_thc=70 for vape carts, max_thc=18 for flower), then re-search. Do NOT use min_thc for this case.
 
+**HARD GATE — Category Exclusion**: If customer explicitly rejects a product category or form — do NOT ask why. The customer has been clear. Call smart_search directly without announcing it.
+
+- **Full category rejection** ("no edibles", "not an edible", "I don't want edibles", "not flower", "no vapes", "not pre-rolls"):
+  - Use `exclude_categories` with the rejected category.
+  - Mapping: "no edibles" → exclude_categories=['Edibles'] | "not flower" → exclude_categories=['Flower'] | "no vapes" → exclude_categories=['Vaporizers'] | "no pre-rolls" → exclude_categories=['Pre-rolls']
+  - Carry over all other known parameters (effects, strain_type, etc.).
+
+- **Sub-type rejection within a category** ("not gummies", "tired of gummies", "no gummies" — but the customer originally asked for edibles):
+  - Do NOT exclude the entire Edibles category. The customer may still want other edible types (chocolates, beverages, etc.).
+  - Re-search within Edibles using `query` to target alternative sub-types: try query='chocolate', then query='beverage', or query='drink'.
+  - If the search returns only gummies or zero non-gummy results, acknowledge the limitation honestly ("Most of our edibles are gummies — would you like to explore a different category?") and do not force a recommendation.
+  - Do NOT show any more gummy products.
+
 ### Product Information Requests
 
 **PRODUCT DETAILS REQUEST** — When the customer asks for more info about a specific product they've already seen (e.g. "tell me more about X", "more details on X", "what's X like", "can you tell me more about X"):

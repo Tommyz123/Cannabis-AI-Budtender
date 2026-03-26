@@ -10,7 +10,7 @@
     "G - Information Gathering Layer",
     "B - Recommendation Refinement"
   ],
-  "total_cases": 16,
+  "total_cases": 17,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -462,6 +462,43 @@
         "product-comparison",
         "multi-search",
         "tool-call"
+      ]
+    },
+    {
+      "id": "tc_B6",
+      "scenario": "recommendation_refinement",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "顾客明确拒绝某个品类（not gummies）→ AI 应立即用 exclude_categories 重搜，不得再询问原因，不得再推同类产品",
+      "input": {
+        "user_message": "Not gummies. I am kind of tired of gummies.",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "Can you suggest an edible for chilling out at home?"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some great edible options for relaxing at home:\n\n1. **TTM | Pluto Punch** by Theory Wellness\n   Price: $20 | THC: 5mg per piece\n   A fruity gummy with a mellow, easygoing high — perfect for unwinding on the couch.\n\n2. **Midnight Blueberry 5:1** by Kiva\n   Price: $25 | THC: 5mg per piece\n   A balanced CBD-forward gummy with a gentle relaxing effect and a sweet blueberry flavor.\n\n3. **TTM | Cherry Nova** by Theory Wellness\n   Price: $18 | THC: 5mg per piece\n   Light cherry-flavored gummies, smooth and easy to dose — great for a chill night in.\n\nAny of these sound good, or would you like to explore other options?"
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "顾客只拒绝了 gummies 子类型，并非拒绝所有 edibles。AI 必须调用 smart_search 重搜，不得再推 gummies，不得询问排除原因。若库存中无非 gummy edibles，可诚实说明并建议其他品类。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search 重新搜索（不得停留在原推荐上）",
+        "AI 的回复没有推荐任何 gummies 产品",
+        "AI 没有询问顾客为什么不想要 gummies（用户已明确表达，无需追问原因）",
+        "AI 语气自然，承认了顾客的偏好，并顺势给出其他产品或说明库存情况"
+      ],
+      "tags": [
+        "refinement",
+        "category-exclusion",
+        "exclude-categories",
+        "re-search"
       ]
     },
     {
