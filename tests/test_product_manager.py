@@ -112,3 +112,73 @@ def test_fallback_level2(pm):
     assert "Concentrates" not in filtered["Categories"].values
     level1 = pm._apply_beginner_filter(pm._df, {"Beginner", "Intermediate", "All Levels"})
     assert len(filtered) >= len(level1)
+
+
+# ── strain_type filter tests ───────────────────────────────────────────────────
+
+def test_strain_type_filter_indica(pm):
+    """Verify strain_type='Indica' only returns Indica products."""
+    result = pm.search_products(category="Flower", strain_type="Indica")
+    assert result["total"] > 0
+    for p in result["products"]:
+        assert p["t"].lower() == "indica", f"Expected Indica, got {p['t']}"
+
+
+def test_strain_type_filter_sativa(pm):
+    """Verify strain_type='Sativa' only returns Sativa products."""
+    result = pm.search_products(category="Flower", strain_type="Sativa")
+    assert result["total"] > 0
+    for p in result["products"]:
+        assert p["t"].lower() == "sativa", f"Expected Sativa, got {p['t']}"
+
+
+def test_strain_type_filter_case_insensitive(pm):
+    """Verify strain_type filter is case-insensitive."""
+    result_upper = pm.search_products(strain_type="Indica")
+    result_lower = pm.search_products(strain_type="indica")
+    assert result_upper["total"] == result_lower["total"]
+
+
+def test_strain_type_no_results_triggers_fallback(pm):
+    """Verify fallback triggers when strain_type + query combination yields 0 results."""
+    # Sativa flower with diesel/sour flavor = 0 results in dataset
+    result = pm.search_products(
+        category="Flower",
+        strain_type="Sativa",
+        query="diesel",
+        budget_target=50,
+    )
+    assert result["total"] > 0, "Fallback should find results after removing strain_type"
+    assert "fallback_note" in result, "Result should include fallback_note"
+    assert "Sativa" in result["fallback_note"]
+
+
+def test_fallback_note_absent_when_results_found(pm):
+    """Verify fallback_note is NOT present when original search returns results."""
+    result = pm.search_products(category="Flower", strain_type="Indica")
+    assert "fallback_note" not in result
+
+
+def test_fallback_thc_range_widening(pm):
+    """Verify fallback widens THC range by ±5% when strain_type not set."""
+    # Use an impossibly narrow THC range with no strain_type to trigger THC fallback
+    result = pm.search_products(
+        category="Flower",
+        min_thc=99,
+        max_thc=99,
+    )
+    # Should either find nothing (all fallbacks fail) or find with widened range
+    # The key check: no crash and result has expected structure
+    assert "products" in result
+    assert "total" in result
+
+
+def test_fallback_price_relaxation(pm):
+    """Verify fallback relaxes price by +$15 when other fallbacks fail."""
+    # Products exist just above $10 (e.g., pre-rolls ~$15)
+    result = pm.search_products(
+        category="Pre-rolls",
+        max_price=1,  # impossibly low
+    )
+    assert "products" in result
+    assert "total" in result

@@ -10,6 +10,7 @@ from backend.config import CSV_PATH, BEGINNER_THC_LIMITS
 
 _BEGINNER_EXPERIENCE = {"Beginner", "All Levels"}
 _INTERMEDIATE_EXPERIENCE = {"Beginner", "Intermediate", "All Levels"}
+_STRAIN_TYPE_KEYWORDS = {"indica", "sativa", "hybrid"}
 
 _COMPACT_KEY_MAP = {
     "id": "id",
@@ -154,6 +155,7 @@ class ProductManager:
         self,
         query: str = "",
         category: str | None = None,
+        strain_type: str | None = None,
         effects: list[str] | None = None,
         exclude_effects: list[str] | None = None,
         exclude_categories: list[str] | None = None,
@@ -186,18 +188,31 @@ class ProductManager:
                 overview[cat] = {"count": len(cdf), "subcategories": subs}
             return {"overview": overview}
 
+        df_base = df.copy()
         df = self._apply_filters(
-            df, category, effects, exclude_effects, exclude_categories,
+            df, category, strain_type, effects, exclude_effects, exclude_categories,
             min_thc, max_thc, max_price, budget_target, time_of_day,
             activity_scenario, unit_weight, query, is_beginner,
         )
         df = self._sort_results(df, budget_target)
-        return self._build_result(df, limit)
+        result = self._build_result(df, limit)
+
+        if result["total"] == 0:
+            fallback = self._try_fallback(
+                df_base, category, strain_type, effects, exclude_effects, exclude_categories,
+                min_thc, max_thc, max_price, budget_target, time_of_day,
+                activity_scenario, unit_weight, query, is_beginner, limit,
+            )
+            if fallback:
+                return fallback
+
+        return result
 
     def _apply_filters(
         self,
         df: pd.DataFrame,
         category: str | None,
+        strain_type: str | None,
         effects: list[str] | None,
         exclude_effects: list[str] | None,
         exclude_categories: list[str] | None,
@@ -223,27 +238,31 @@ class ProductManager:
             else:
                 df = df[df["Categories"].str.lower() == cat_lower]
 
-        # 2. Exclude categories
+        # 2. Strain type filter (Indica / Sativa / Hybrid)
+        if strain_type:
+            df = df[df["Types"].str.lower() == strain_type.lower()]
+
+        # 3. Exclude categories
         if exclude_categories:
             excl_lower = [c.lower() for c in exclude_categories]
             df = df[~df["Categories"].str.lower().isin(excl_lower)]
 
-        # 3. Effects filter (Feelings column contains keyword)
+        # 4. Effects filter (Feelings column contains keyword)
         if effects:
             for effect in effects:
                 df = df[df["Feelings"].str.contains(effect, case=False, na=False)]
 
-        # 4. Exclude effects
+        # 5. Exclude effects
         if exclude_effects:
             for eff in exclude_effects:
                 df = df[~df["Feelings"].str.contains(eff, case=False, na=False)]
 
-        # 5. min_thc (percentage products only)
+        # 6. min_thc (percentage products only)
         if min_thc is not None:
             pct_mask = df["THCUnit"] == "%"
             df = df[~pct_mask | (df["THCLevel"] >= min_thc)]
 
-        # 5b. max_thc (percentage products only)
+        # 6b. max_thc (percentage products only)
         if max_thc is not None:
             pct_mask = df["THCUnit"] == "%"
             df = df[~pct_mask | (df["THCLevel"] <= max_thc)]
@@ -324,6 +343,100 @@ class ProductManager:
         df = df.head(limit)
         products = [_row_to_compact(row) for _, row in df.iterrows()]
         return {"products": products, "total": matched_count}
+
+    def _try_fallback(
+        self,
+        df_base: pd.DataFrame,
+        category: str | None,
+        strain_type: str | None,
+        effects: list[str] | None,
+        exclude_effects: list[str] | None,
+        exclude_categories: list[str] | None,
+        min_thc: float | None,
+        max_thc: float | None,
+        max_price: float | None,
+        budget_target: float | None,
+        time_of_day: str | None,
+        activity_scenario: str | None,
+        unit_weight: str | None,
+        query: str,
+        is_beginner: bool,
+        limit: int,
+    ) -> dict | None:
+        """
+        Try one fallback search when the original returns 0 results.
+
+        Priority:
+          1. Remove strain_type AND category (when query is present) to find flavor matches
+             across all forms; results are sorted by FlavorProfile match first.
+          2. Widen THC range by ±5%
+          3. Relax price limit by +$15
+
+        Returns result dict with 'fallback_note' field, or None if all fallbacks also fail.
+        """
+        def _run(new_category, new_strain_type, new_query, new_min_thc, new_max_thc,
+                 new_max_price, new_budget, note, flavor_priority=False):
+            df = self._apply_filters(
+                df_base.copy(), new_category, new_strain_type, effects, exclude_effects, exclude_categories,
+                new_min_thc, new_max_thc, new_max_price, new_budget, time_of_day,
+                activity_scenario, unit_weight, new_query, is_beginner,
+            )
+            if flavor_priority and new_query and not df.empty and "FlavorProfile" in df.columns:
+                # Sort: FlavorProfile matches first, then by price proximity
+                df = df.copy()
+                df["_flv_match"] = df["FlavorProfile"].str.contains(new_query, case=False, na=False).astype(int)
+                if new_budget is not None:
+                    df["_price_dist"] = (df["Price"].fillna(0) - new_budget).abs()
+                    df = df.sort_values(["_flv_match", "_price_dist"], ascending=[False, True])
+                    df = df.drop(columns=["_price_dist"])
+                else:
+                    df = df.sort_values("_flv_match", ascending=False)
+                df = df.drop(columns=["_flv_match"])
+            else:
+                df = self._sort_results(df, new_budget)
+            result = self._build_result(df, limit)
+            if result["total"] > 0:
+                result["fallback_note"] = note
+                return result
+            return None
+
+        # Fallback 1: remove strain_type AND category to find flavor matches across all forms
+        if strain_type:
+            label = f"{strain_type.capitalize()} {category}" if category else strain_type.capitalize()
+            note = (
+                f"No {label} products matched your criteria. "
+                "Showing closest flavor matches across all strain types and forms."
+            )
+            result = _run(None, None, query, min_thc, max_thc, max_price, budget_target, note,
+                          flavor_priority=bool(query))
+            if result:
+                return result
+
+        # Fallback 2: widen THC range by ±5%
+        if min_thc is not None or max_thc is not None:
+            new_min = (min_thc - 5) if min_thc is not None else None
+            new_max = (max_thc + 5) if max_thc is not None else None
+            note = (
+                "No products matched the requested THC range. "
+                "Showing nearby options (±5% THC)."
+            )
+            result = _run(category, strain_type, query, new_min, new_max, max_price, budget_target, note)
+            if result:
+                return result
+
+        # Fallback 3: relax price by +$15
+        if max_price is not None or budget_target is not None:
+            new_max_price = (max_price + 15) if max_price is not None else None
+            new_budget = (budget_target + 15) if budget_target is not None else None
+            note = (
+                f"No products found within the original budget. "
+                f"Showing options up to ${int((max_price or budget_target) + 15)}."
+            )
+            result = _run(category, strain_type, query, min_thc, max_thc, new_max_price, new_budget, note)
+            if result:
+                return result
+
+        return None
 
     def get_product_by_id(self, product_id: str) -> dict | None:
         """Return full compact product info for a given product ID, or None if not found."""

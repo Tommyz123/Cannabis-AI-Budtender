@@ -348,27 +348,31 @@ You have access to `smart_search` to find products and `get_product_details` for
 Use `smart_search` whenever you are ready to recommend products. Never recommend products without calling the tool first.
 
 **TOOL CALL RULES (follow strictly):**
-- Call `smart_search` EXACTLY ONCE per turn — combine ALL criteria in a single call.
+- Call `smart_search` EXACTLY ONCE per turn — combine ALL criteria in a single call. Do NOT call it multiple times in parallel or in sequence within the same turn.
 
 - **Strain NAMES** (e.g. Gelato, Sour Diesel, OG Kush, Pineapple Express) → use `query` field + EXACTLY 1 inferred effect (using multiple effects will return zero results due to AND filtering):
   Example: "I love Sour Diesel" → smart_search(query='Sour Diesel', effects=['Energetic'])
   Example: "something like Gelato" → smart_search(query='Gelato', effects=['Relaxed'])
   IMPORTANT: For strain name searches, always include exactly 1 effect in the list.
 
-- **Strain TYPES** (Indica / Sativa / Hybrid) → translate to effects; ALSO add query='indica'/'sativa' to filter strain-typed products:
-  - "sativa" or "sativa" + price → query='sativa', effects=['Energetic','Uplifted'] + price params
-  - "indica" or "indica" + price → query='indica', effects=['Relaxed','Sleepy'] + price params
-  - "heavy indica" / "couch lock" / "put me on the couch" → query='indica', effects=['Relaxed','Sleepy'], time_of_day='Nighttime'
-  - "indica, no couch lock" / "indica, nothing too sedating" → query='indica', effects=['Relaxed'], exclude_effects=['Sedated','Sleepy']
-  - **When product form is known (current message OR conversation history)**: ALWAYS use category param + effects, NO query:
-    GOOD: "sativa flower" → category='Flower', effects=['Energetic','Uplifted']
-    GOOD: "indica pre-roll" → category='Pre-rolls', effects=['Relaxed','Sleepy']
-    GOOD: "cheap indica pre-rolls" → category='Pre-rolls', effects=['Relaxed','Sleepy'], budget_target=15
-    GOOD: history has "flower", user says "sativa" → category='Flower', effects=['Energetic','Uplifted']
-    GOOD: history has "edibles", user says "indica" → category='Edibles', effects=['Relaxed','Sleepy']
-    BAD: "sativa flower" → query='sativa', effects=... (wrong — NO query when form is given)
-    BAD: history has "flower", user says "sativa" → query='sativa' (wrong — must use category='Flower' from history)
-  - Hybrid → infer effects from context; skip effects filter if unclear
+- **Strain TYPES** (Indica / Sativa / Hybrid) → ALWAYS use `strain_type` parameter + translate to effects:
+  - "indica" → strain_type='Indica', effects=['Relaxed','Sleepy']
+  - "sativa" → strain_type='Sativa', effects=['Energetic','Uplifted']
+  - "hybrid" → strain_type='Hybrid', infer effects from context
+  - "heavy indica" / "couch lock" / "put me on the couch" → strain_type='Indica', effects=['Relaxed','Sleepy'], time_of_day='Nighttime'
+  - "indica, no couch lock" / "indica, nothing too sedating" → strain_type='Indica', effects=['Relaxed'], exclude_effects=['Sedated','Sleepy']
+  - **When product form is known (current message OR conversation history)**: ALWAYS use category param, NO query for strain type:
+    GOOD: "sativa flower" → category='Flower', strain_type='Sativa', effects=['Energetic','Uplifted']
+    GOOD: "indica pre-roll" → category='Pre-rolls', strain_type='Indica', effects=['Relaxed','Sleepy']
+    GOOD: "cheap indica pre-rolls" → category='Pre-rolls', strain_type='Indica', effects=['Relaxed','Sleepy'], budget_target=15
+    GOOD: "indica flower, diesel flavor" → category='Flower', strain_type='Indica', query='diesel', effects=['Relaxed','Sleepy']
+    GOOD: "sativa flower with diesel or sour flavor" → category='Flower', strain_type='Sativa', query='diesel', effects=['Energetic','Uplifted']
+  - **Flavor queries**: ALWAYS use a single keyword in `query` (e.g., query='diesel'). Do NOT combine multiple flavor words (BAD: query='diesel sour' — this will find nothing).
+    GOOD: history has "flower", user says "sativa" → category='Flower', strain_type='Sativa', effects=['Energetic','Uplifted']
+    BAD: "sativa flower" → query='sativa', effects=... (wrong — use strain_type, not query)
+    BAD: "sativa flower with diesel flavor" → category='Flower', strain_type='Sativa' (wrong — missing query='diesel'; flavor descriptors MUST go in query)
+    BAD: history has "flower", user says "sativa" → query='sativa' (wrong — must use strain_type='Sativa')
+  - Hybrid → strain_type='Hybrid'; infer effects from context; skip effects filter if unclear
 
 - **Strain name takes priority** (only for specific named strains like Gelato, Sour Diesel, OG Kush — NOT for strain TYPES like indica/sativa/hybrid):
   If the message contains BOTH a strain name AND flavor words, ALWAYS put the strain name in `query`, not the flavor words.
@@ -389,7 +393,20 @@ Use `smart_search` whenever you are ready to recommend products. Never recommend
 When customer asks for a specific size, ALWAYS include unit_weight in smart_search call.
 """
 
-SYSTEM_PROMPT = MEDICAL_COMPLIANCE_PROMPT + "\n\n---\n\n" + AGE_COMPLIANCE_PROMPT + "\n\n---\n\n" + BEGINNER_SAFETY_PROMPT + "\n\n---\n\n" + INFORMATION_GATHERING_PROMPT + "\n\n---\n\n" + RECOMMENDATION_REFINEMENT_PROMPT + "\n\n---\n\n" + _SALES_PROMPT
+FALLBACK_SEARCH_PROMPT = """## FALLBACK SEARCH DISCLOSURE
+When the tool result contains a `fallback_note` field, it means the original search returned 0 results and the system automatically relaxed one condition to find alternatives.
+
+You MUST:
+1. Acknowledge the relaxation in ONE brief sentence (use the `fallback_note` value as guidance).
+2. Recommend from the returned products — prioritize products whose flavor profile directly matches what the customer asked for.
+3. If results include multiple product forms (e.g., both Pre-rolls and Flower), lead with the best flavor match, then offer the other form as a secondary option.
+4. Do NOT say "we don't carry" or "not available" — products were found after relaxing one condition.
+
+Example (mixed forms): "We don't have a Sativa Flower with that diesel note, but I found a Sativa Pre-roll that nails it — and if you'd prefer something in flower form, there's a Hybrid option with a similar flavor profile."
+Example (strain type relaxed): "We don't have any Indica options with that flavor profile, but I found some great Sativa and Hybrid picks that hit that diesel note — here's what stood out:"
+"""
+
+SYSTEM_PROMPT = MEDICAL_COMPLIANCE_PROMPT + "\n\n---\n\n" + AGE_COMPLIANCE_PROMPT + "\n\n---\n\n" + BEGINNER_SAFETY_PROMPT + "\n\n---\n\n" + INFORMATION_GATHERING_PROMPT + "\n\n---\n\n" + RECOMMENDATION_REFINEMENT_PROMPT + "\n\n---\n\n" + FALLBACK_SEARCH_PROMPT + "\n\n---\n\n" + _SALES_PROMPT
 
 
 # ── Simple response shortcuts ─────────────────────────────────────────────────
@@ -654,7 +671,7 @@ def serialize_profile(profile: dict) -> str:
     _FIELD_LABELS = {
         "effect_intent": "Effect intent",
         "preferred_types": "Product form",
-        "strain_preference": "Strain direction",
+        "strain_preference": "Strain type (use strain_type parameter)",
         "experience_level": "Experience level",
         "price_range": "Budget",
         "occasions": "Occasion",
@@ -696,6 +713,10 @@ TOOLS_SCHEMA = [
                     "category": {
                         "type": "string",
                         "description": "Product category: Flower, Pre-rolls, Edibles, Vaporizers, Concentrates, Tinctures, Accessories",
+                    },
+                    "strain_type": {
+                        "type": "string",
+                        "description": "Filter by strain type: Indica, Sativa, or Hybrid. Use this when the customer explicitly requests a strain type.",
                     },
                     "effects": {
                         "type": "array",
@@ -915,12 +936,25 @@ def _run_agent_loop(
             # Append assistant message with tool calls
             messages.append(msg)
 
-            # Execute each tool call
+            # Execute each tool call — only the first smart_search per turn is executed;
+            # duplicate smart_search calls are skipped to prevent flavor-constraint loss.
             search_had_results = False
+            smart_search_executed = False
             for tool_call in msg.tool_calls:
+                fn_name = tool_call.function.name
+                if fn_name == "smart_search" and smart_search_executed:
+                    # Duplicate smart_search in same turn — skip execution, return placeholder
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps({"error": "duplicate smart_search ignored — use a single call combining all criteria", "total": 0}, separators=(",", ":")),
+                    })
+                    continue
                 result = _execute_tool_call(tool_call, product_manager)
-                if tool_call.function.name == "smart_search" and result.get("total", 0) > 0:
-                    search_had_results = True
+                if fn_name == "smart_search":
+                    smart_search_executed = True
+                    if result.get("total", 0) > 0:
+                        search_had_results = True
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
