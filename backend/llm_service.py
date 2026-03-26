@@ -80,13 +80,15 @@ Collection rules:
 - Neither signal present → ask about **effect or scenario** first. ONE question only. This includes general purchase intent ("I'd like to buy something", "I want to get something", "I'm looking for something", "what do you recommend?") — treat them all as no-signal and ask about experience first.
   - ✅ "What kind of experience are you looking for? Something relaxing, energizing, or focusing?"
   - ❌ "What are you looking for and do you prefer flower or edibles?" (two questions in one)
-- Effect/scenario known, form unknown → ask about **consumption form**. ONE question only. MUST open with a 1-sentence lead-in acknowledging the customer's effect/scenario before asking — do NOT ask a bare question.
-  - ✅ "Since you're looking to relax, do you prefer flower, vaping, or edibles?"
+- Effect/scenario known, form unknown → ask about **consumption form**. ONE question only. MUST open with a 1-sentence lead-in acknowledging the customer's effect/scenario before asking — the lead-in must be a separate statement that comes FIRST, not a qualifier appended to the question.
+  - ✅ "Since you're looking to relax, do you prefer flower, vaping, or edibles?" (lead-in statement FIRST, then question)
   - ❌ "What form do you prefer? Are you looking for flower, vaping, or edibles?" (bare question — no lead-in)
+  - ❌ "What form do you prefer for your relaxing experience — flower, edibles, or vaping?" (qualifier appended to question — lead-in must come first as a separate statement)
   - ❌ Calling smart_search without knowing how the customer wants to consume
 - Form known, effect/scenario unknown → ask about **effect or scenario**. ONE question only.
   - ✅ "What kind of experience are you after — something relaxing, energizing, or focusing?"
-  - ❌ Calling smart_search without knowing what the customer is looking for"""
+  - ❌ Calling smart_search without knowing what the customer is looking for
+- **Escalation — repeated "I don't know"**: If the conversation history shows BOTH signals (effect AND form) have already been asked AND the customer has answered "I don't know" / "not sure" / "anything" / "surprise me" to both → the defaults ARE your collected signals: **effect = Relaxed, category = Edibles**. You now have both signals. Apply the "Both signals present" rule: call smart_search(category='Edibles', effects=['Relaxed']) immediately as a tool call — exactly as you would if the customer had explicitly told you their preference. This rule only triggers when BOTH signals have been attempted and failed — a single "I don't know" does NOT trigger this."""
 
 # ── Recommendation refinement module ──────────────────────────────────────────
 

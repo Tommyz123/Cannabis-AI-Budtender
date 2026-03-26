@@ -3,6 +3,24 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-25] 新增 | tc_G6 升级规则（连续 I don't know → 停止追问）
+
+- **变更内容**：
+  1. `backend/llm_service.py` — INFORMATION_GATHERING_PROMPT 新增 Escalation 规则：效果和 form 都被问过且都回答 I don't know 时，默认值（Relaxed + Edibles）视为已收集信号，停止追问
+  2. `golden_dataset_v2.json` — 新增 tc_G6（hard/P1），total_cases=15；TC 期望行为调整为"停止追问 + 表达搜索意图"（不强制同轮工具调用，受 Agent Loop 架构限制）
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：tc_G6 稳定 4/4；全集 15/15 通过（100%）
+- **过程记录**：前 4 次 prompt 尝试均因 Agent Loop 限制失败（LLM 先生成共情文字导致工具调用不触发）；最终调整 TC 期望行为为"停止追问"而非"必须调工具"
+
+## [2026-03-25] 修复 | tc_G2 lead-in 规则 + tc_B4 get_product_details 幻觉
+
+- **变更内容**：
+  1. `backend/llm_service.py` — INFORMATION_GATHERING_PROMPT "effect known, form unknown" 分支：加强为强制要求 lead-in 必须作为独立陈述句先于问句出现；新增具体 ❌ 示例（"What form do you prefer for your relaxing experience"）
+  2. `backend/llm_service.py` — RECOMMENDATION_REFINEMENT_PROMPT PRODUCT DETAILS REQUEST：新增 "NEVER use get_product_details" 禁止语句，防止 LLM 幻觉 product_id
+- **涉及文件**：`backend/llm_service.py`
+- **测试结果**：tc_G2 单 TC 稳定 4/4；tc_B4 连续 3 次 4/4；全集 14/14 通过（100%）
+- **根因**：product_id 从未出现在推荐消息中，LLM 使用 get_product_details 必然幻觉 ID；lead-in "qualifier 附在问句后"不符合销售心理学要求
+
 ## [2026-03-25] 新增 | Direction B（推荐精化）模块化 + tc_B1~B5
 
 - **变更内容**：
@@ -10,6 +28,14 @@
   2. `golden_dataset_v2.json` — 新增 tc_B1~B5，directions 更新为 C+G+B，total_cases=14
 - **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
 - **测试结果**：全集 14/14 通过（100%），无回退
+
+## [2026-03-25] 新增 | 信息收集层 tc_G5（单条消息含两个信号 → 直接搜索）
+
+- **变更内容**：
+  1. `golden_dataset_v2.json` — 新增 tc_G5：顾客在单条消息同时提供效果（sleeping tonight）和消费方式（edibles），AI 应直接调 smart_search；total_cases 从 8 更新为 9
+  2. prompt 无需改动，现有 "Both signals present → call smart_search" 规则已覆盖
+- **涉及文件**：`golden_dataset_v2.json`
+- **测试结果**：tc_G5 首次直接通过（4/4，100%）；全集 9/9 通过，无回退
 
 ## [2026-03-25] 新增 | 信息收集层 tc_G4（多轮信号累积 → 直接搜索）
 

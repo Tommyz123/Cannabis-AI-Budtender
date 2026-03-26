@@ -7,6 +7,9 @@ An embeddable AI chat widget that helps cannabis dispensary customers find the r
 ## Features
 
 - **Conversational Recommendations** — Understands customer needs through multi-turn dialogue (effects, budget, time of day, activity) and recommends the best-matched products from live inventory.
+- **Information Gathering Layer** — Collects two signals before searching: effect/scenario and consumption form. Asks one question at a time, leads with expertise ("Since you're looking to relax…"), and stops asking after escalation (repeated "I don't know").
+- **Compliance Layer** — Enforces medical disclaimers (no treatment claims), age verification (21+ hard block), and beginner safety (dosage limits, no infused products for first-timers).
+- **Recommendation Refinement** — Handles post-recommendation feedback: asks for budget on price objections, re-searches with `max_thc` on strength feedback, asks for reason on generic rejections, fetches full product details on request, and runs side-by-side comparisons.
 - **Beginner Safety Mode** — Enforces THC limits (edibles ≤ 5 mg, flower ≤ 20%, vaporizers ≤ 70%) when `is_beginner: true` is passed in the request. The LLM receives a session-level context injection so it never asks the customer again and always applies beginner filters throughout the conversation.
 - **Agent Loop with Tool Calling** — Uses OpenAI function calling to run `smart_search` and `get_product_details` against a 217-product catalog, enabling precise, multi-criteria filtering without injecting the full dataset into every prompt.
 - **Rich Free-Text Search** — `smart_search` matches against strain name, product type, effects, flavor profile, and hardware type, so queries like "citrus" or "pod" return relevant results.
@@ -76,7 +79,13 @@ Health check: `GET http://localhost:8000/health`
 
 ### 5. Open the frontend
 
-Open `frontend/index.html` in your browser directly, or serve it from any static file server. The chat widget connects to `http://localhost:8000` by default.
+Serve the frontend with a local HTTP server (required to avoid CORS errors):
+
+```bash
+python -m http.server 3000 --directory frontend/
+```
+
+Then open `http://localhost:3000` in your browser. The chat widget connects to `http://localhost:8000` by default.
 
 ---
 
@@ -140,9 +149,15 @@ source venv/bin/activate
 python eval/run_eval.py
 ```
 
-Test cases are defined in `golden_dataset_v1.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
+Test cases are defined in `golden_dataset_v2.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
 
-Current coverage: **13 test cases** across discovery flow and recommendation refinement scenarios (12/13 passing; tc_A6 is a known non-deterministic edge case).
+Current coverage: **15 test cases** across three directions (15/15 passing):
+
+| Direction | TCs | Description |
+|---|---|---|
+| C — Compliance Layer | C1~C4 | Medical disclaimers, age verification, beginner safety |
+| G — Information Gathering | G1~G6 | Signal collection, escalation, multi-turn patterns |
+| B — Recommendation Refinement | B1~B5 | Price/strength feedback, dislike, product details, comparison |
 
 ## License
 

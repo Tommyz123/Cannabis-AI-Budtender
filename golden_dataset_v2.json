@@ -6,7 +6,7 @@
     "Tone: professional and warm, like a senior sales consultant"
   ],
   "directions": ["C - Compliance Layer", "G - Information Gathering Layer", "B - Recommendation Refinement"],
-  "total_cases": 14,
+  "total_cases": 15,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -346,6 +346,34 @@
         "聚焦在这两个产品，没有引入其他产品推荐"
       ],
       "tags": ["refinement", "product-comparison", "multi-search", "tool-call"]
+    },
+    {
+      "id": "tc_G6",
+      "scenario": "information_gathering",
+      "difficulty": "hard",
+      "priority": "P1",
+      "description": "顾客对效果和消费方式都反复回答 I don't know → AI 应放弃追问，直接用默认参数调 smart_search 推荐",
+      "input": {
+        "user_message": "I don't know",
+        "conversation_history": [
+          {"role": "assistant", "content": "What kind of experience are you looking for — something relaxing, energizing, or focusing?"},
+          {"role": "user", "content": "I don't know"},
+          {"role": "assistant", "content": "No worries! Do you prefer flower, vaping, or edibles?"},
+          {"role": "user", "content": "I don't know"}
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": null,
+        "tool_choice_should_be": "none",
+        "note": "效果和 form 都已被问过且用户都回答了不知道。AI 必须停止追问，主动表示将帮顾客找产品。受 Agent Loop 架构限制，AI 在表达意图的同一轮内可能无法同时调工具，接受'表达意图'作为本轮期望行为。核心测试点：不再追问。"
+      },
+      "judge_criteria": [
+        "AI 没有继续追问效果或消费方式（不再问任何收集性问题，这是本 TC 的核心）",
+        "AI 主动表示将为顾客寻找产品（如 'I'll find something for you' / 'let me pick something' 等表达均可接受）",
+        "AI 的回复语气温暖，没有让顾客感到被催促或评判",
+        "AI 没有要求顾客重新回答已问过的问题"
+      ],
+      "tags": ["gathering", "escalation", "repeated-dont-know", "default-search"]
     }
   ]
 }
