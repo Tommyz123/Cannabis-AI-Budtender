@@ -30,7 +30,7 @@ MEDICAL_COMPLIANCE_PROMPT = """## MEDICAL PROTECTION (highest priority)
 
 3. When a customer asks if cannabis can "help with" a symptom or condition: give a brief disclaimer first, then guide with product language. Do not open with an apology or immediately redirect to a doctor.
    - ❌ "I'm sorry to hear that. I recommend consulting a healthcare professional."
-   - ✅ "I can't offer medical advice, but I'm happy to help you find something that suits your preferences. Do you prefer flower, vaping, or edibles?" """
+   - ✅ "I can't offer medical advice, but if you're looking to relax and unwind, indica strains are known for their calming and relaxing effects. Do you prefer flower, vaping, or edibles?" """
 
 AGE_COMPLIANCE_PROMPT = """## AGE VERIFICATION (highest priority)
 
@@ -499,6 +499,13 @@ _VAPE_FLOWER_ALTERNATIVE = re.compile(
     re.IGNORECASE,
 )
 
+_PRODUCT_COMPARISON_PATTERNS = re.compile(
+    r"\b(difference|compare|comparison|versus|vs\.?)\b.{0,60}\b(and|or|vs\.?)\b|"
+    r"\bwhich (one|is better|would you recommend)\b|"
+    r"\bhow does .{1,40} compare\b",
+    re.IGNORECASE,
+)
+
 _NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
     r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
     r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
@@ -944,6 +951,16 @@ def _prepare_messages(
             "Per INFORMATION GATHERING rules: 'flower' is the selected form — category='Flower'. "
             "Both signals are now complete. Your ONLY valid action is to call smart_search immediately. "
             "DO NOT output any text before the tool call. DO NOT ask about pre-rolls. DO NOT ask about hardware type."
+        )
+
+    # Inject action instruction for product comparison requests
+    if _PRODUCT_COMPARISON_PATTERNS.search(user_message):
+        messages[0]["content"] += (
+            "\n\n[COMPARISON REQUEST DETECTED]: Customer is asking to compare or choose between specific products. "
+            "Per RECOMMENDATION REFINEMENT rules: you MUST call smart_search(query='[product A name]', limit=1) "
+            "and then smart_search(query='[product B name]', limit=1) to retrieve fresh data for EACH product. "
+            "Build the comparison ENTIRELY from tool-returned fields. "
+            "DO NOT answer from memory or training data — product details (flavor, effects, THC) must come from the tool."
         )
 
     # Inject action instruction when customer gives negative strength constraint + form is known

@@ -296,16 +296,17 @@ class ProductManager:
             df = df[df["UnitWeight"].str.lower() == unit_weight.lower()]
 
         # 11. free-text query (Strain + Types + Feelings + UnitWeight + Description + FlavorProfile + HardwareType)
+        # regex=False: treat query as literal string, not regex — prevents | and other special chars from being misinterpreted
         if query:
             desc_col = "Description" if "Description" in df.columns else None
-            mask = df["Strain"].str.contains(query, case=False, na=False)
-            mask |= df["Types"].str.contains(query, case=False, na=False)
-            mask |= df["Feelings"].str.contains(query, case=False, na=False)
-            mask |= df["UnitWeight"].str.contains(query, case=False, na=False)
+            mask = df["Strain"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["Types"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["Feelings"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["UnitWeight"].str.contains(query, case=False, na=False, regex=False)
             if desc_col:
-                mask |= df[desc_col].str.contains(query, case=False, na=False)
-            mask |= df["FlavorProfile"].str.contains(query, case=False, na=False)
-            mask |= df["HardwareType"].str.contains(query, case=False, na=False)
+                mask |= df[desc_col].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["FlavorProfile"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["HardwareType"].str.contains(query, case=False, na=False, regex=False)
             df = df[mask]
 
         # Beginner safety filter

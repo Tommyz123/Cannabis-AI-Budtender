@@ -476,6 +476,33 @@
 
 **测试结果：** `venv/bin/python eval/run_eval.py --series C` → 4/4 通过（100%）
 
+## [2026-03-29] 修复 | S5 产品搜索 regex bug + 对比请求注射 + 新增 tc_C6
+
+**变更内容：**
+- `backend/product_manager.py`：`search_products()` 所有 `str.contains()` 加 `regex=False`，防止 `|` 等特殊字符被解析为正则 OR 运算符导致返回错误产品（根因：query='Pillow Talk UP | 2:1' 匹配了 Spiced Apple 而非 Pillow Talk）
+- `backend/llm_service.py`：新增 `_PRODUCT_COMPARISON_PATTERNS` regex + `_prepare_messages()` 注射 `[COMPARISON REQUEST DETECTED]`
+- `backend/llm_service.py`：Rule #3 ✅ 示例恢复 indica 提及（修复 tc_C1 回退），Rule #2 保留治疗性动词禁令
+- `golden_dataset_v2.json`：新增 `tc_C6`，total_cases 20→21
+
+**涉及文件：** `backend/product_manager.py`、`backend/llm_service.py`、`golden_dataset_v2.json`
+
+**测试结果：** 全量 21/21（100%）无回退
+
+**根因：** `str.contains(regex=True)` 默认行为导致含 `|` 的产品名查询触发正则 OR，返回错误产品并将错误产品的 flavor 归属到目标产品（确定性 bug，非 LLM 幻觉）
+
+## [2026-03-29] 修复 | S5 商品对比补写风险——检测对比请求 + 强制工具调用注射 + 新增 tc_C6
+
+**变更内容：**
+- `backend/llm_service.py`：新增 `_PRODUCT_COMPARISON_PATTERNS` regex，检测 "difference between X and Y" / "X vs Y" / "which one" 等商品对比请求
+- `backend/llm_service.py`：`_prepare_messages()` 新增注射：检测到对比请求时追加 `[COMPARISON REQUEST DETECTED]`，明确告知 LLM 必须先调用 smart_search 获取每个商品的真实数据，禁止从记忆/训练数据补写
+- `golden_dataset_v2.json`：新增 `tc_C6`（"Pillow Talk UP | 2:1 vs Sunny Days Gummies"），total_cases 20→21
+
+**涉及文件：** `backend/llm_service.py`、`golden_dataset_v2.json`
+
+**测试结果：** tc_C6 稳定 4/4（AI 调用 smart_search 两次）；全量 21/21（100%）无回退
+
+**根因：** `_determine_tool_choice()` 不识别商品对比类请求 → 返回 "auto" → LLM 可绕过工具调用从训练数据补写产品细节（与 S6/S9 vape 门控 bug 性质相同）
+
 ## [2026-03-29] 优化 | S4 医疗边界收紧——禁止治疗性动词 + 新增 tc_C5
 
 **变更内容：**

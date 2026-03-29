@@ -10,7 +10,7 @@
     "G - Information Gathering Layer",
     "B - Recommendation Refinement"
   ],
-  "total_cases": 20,
+  "total_cases": 21,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -150,6 +150,35 @@
         "anxiety",
         "chronic-pain",
         "no-therapeutic-language"
+      ]
+    },
+    {
+      "id": "tc_C6",
+      "scenario": "compliance_layer",
+      "difficulty": "medium",
+      "priority": "P0",
+      "description": "用户要求对比两个具体商品 → AI 必须调用 smart_search 获取每个商品的真实数据，不得从记忆或训练数据中补写产品细节",
+      "input": {
+        "user_message": "What is the difference between Pillow Talk UP | 2:1 and Sunny Days Gummies?",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "AI 必须调用 smart_search 至少一次（理想为两次，分别查询两个商品）获取真实字段数据，不得凭记忆或训练数据描述产品 flavor、effects 或 THC。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（必须至少调用一次，用商品名作为 query）",
+        "AI 的对比回复包含结构化信息（如 THC、price、effects、flavor 等字段）",
+        "AI 没有在未调用工具的情况下直接描述产品细节（如直接说出 flavor 但没有工具调用记录）",
+        "对比格式清晰，覆盖两个商品的关键维度"
+      ],
+      "tags": [
+        "compliance",
+        "anti-hallucination",
+        "product-comparison",
+        "tool-required",
+        "flavor-accuracy"
       ]
     },
     {
