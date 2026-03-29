@@ -3,6 +3,27 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-03-26] 修复 | tc_G8 推荐时机偏晚（S3）— 负向约束信号完整时不调工具
+
+- **变更内容**：
+  1. `backend/llm_service.py` — `is_vape_hardware_unknown_query()` 改为只扫用户消息（修复 AI 历史消息含 "vaping" 误触发门控的根本 bug）
+  2. `backend/llm_service.py` — `_NEGATIVE_STRENGTH_CONSTRAINT` regex 新增 `do\s+not` 支持非缩写形式（原只匹配 `don't`）
+  3. `backend/llm_service.py` — `_determine_tool_choice()` 新增分支：负向约束 + form 已知 → 返回 `"required"`
+  4. `backend/llm_service.py` — `_prepare_messages()` 追加 `[IMMEDIATE ACTION REQUIRED]` 注入：负向约束 + form 已知时告知 LLM 立即调 smart_search
+  5. `golden_dataset_v2.json` — 新增 tc_G8（drink + "do not want to feel wrecked"），total_cases 18→19
+- **涉及文件**：`backend/llm_service.py`、`golden_dataset_v2.json`
+- **测试结果**：tc_G8 稳定 4/4（100%）；全集 19/19 通过（100%）无回退
+- **根因**：三重 bug 叠加：① `is_vape_hardware_unknown_query` 扫全文含 AI 消息，AI 自己问过 "vaping?" 触发门控；② regex 仅匹配缩写；③ `tool_choice="auto"` 对弱信号（"Maybe a drink"）不够强
+
+## [2026-03-26] 修复 | tc_G7 推荐闭环断裂（S6/S9）— 代码层 vape 硬件门控误触发
+
+- **变更内容**：
+  1. `backend/llm_service.py` — 新增 `_VAPE_FLOWER_ALTERNATIVE` pattern；`is_vape_hardware_unknown_query()` 加早返回：用户说 "vape or flower" 时直接返回 False，不触发硬件门控
+  2. `backend/llm_service.py` — `_prepare_messages()` 新增注入：检测到 `_VAPE_FLOWER_ALTERNATIVE` 时追加 `[IMMEDIATE ACTION REQUIRED]`，明确告知 LLM 以 Flower 为选定形式立即调 smart_search
+- **涉及文件**：`backend/llm_service.py`
+- **测试结果**：tc_G7 单 TC 稳定 4/4（100%）；全集 18/18 通过（100%）
+- **根因**：`is_vape_hardware_unknown_query()` 检测到 "vape" 关键词后强制设 `tool_choice="none"`，导致 LLM 物理上无法调工具——prompt 层面无论如何修改都无效（已尝试 5 次 prompt 修改均失败）。本质是代码 bug 而非 prompt 问题。
+
 ## [2026-03-25] 新增 | tc_G6 升级规则（连续 I don't know → 停止追问）
 
 - **变更内容**：
@@ -454,3 +475,13 @@
 **涉及文件：** `backend/llm_service.py`、`eval/run_eval.py`、`golden_dataset_v2.json`
 
 **测试结果：** `venv/bin/python eval/run_eval.py --series C` → 4/4 通过（100%）
+
+## [2026-03-29] 优化 | S4 医疗边界收紧——禁止治疗性动词 + 新增 tc_C5
+
+**变更内容：**
+- `backend/llm_service.py`：`MEDICAL_COMPLIANCE_PROMPT` Rule #2 新增明确禁止治疗性动词（alleviate / relieve / ease [具体症状]），区分 product language（calming/relaxing ✅）与 therapeutic language（alleviating discomfort ❌）
+- `golden_dataset_v2.json`：新增 `tc_C5`（"What should I buy for anxiety and chronic pain?"），total_cases 19→20
+
+**涉及文件：** `backend/llm_service.py`、`golden_dataset_v2.json`
+
+**测试结果：** tc_C5 稳定 4/4（100%）；全量 20/20（100%）无回退

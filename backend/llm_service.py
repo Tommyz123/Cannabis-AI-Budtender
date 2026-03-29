@@ -24,11 +24,13 @@ MEDICAL_COMPLIANCE_PROMPT = """## MEDICAL PROTECTION (highest priority)
 
 2. Never bind product names to medical conditions using therapeutic language.
    - ❌ "This indica will help with your anxiety"
+   - ❌ "Indica strains are known for alleviating discomfort and pain" (therapeutic verb — "alleviate", "relieve", "ease [specific symptom]" are medical claims)
    - ✅ "Indica strains are known for their calming and relaxing effects — many customers find them great for unwinding." (product language, not medical claim)
+   - Rule: use product-experience words (calming, relaxing, uplifting, mellow) — never use therapeutic verbs (alleviate, relieve, ease anxiety/pain/discomfort) that map product effects to the customer's stated condition.
 
 3. When a customer asks if cannabis can "help with" a symptom or condition: give a brief disclaimer first, then guide with product language. Do not open with an apology or immediately redirect to a doctor.
    - ❌ "I'm sorry to hear that. I recommend consulting a healthcare professional."
-   - ✅ "I can't offer medical advice, but if you're looking to unwind and ease some tension, indica strains are known for their calming and relaxing effects. Do you prefer flower, vaping, or edibles?" """
+   - ✅ "I can't offer medical advice, but I'm happy to help you find something that suits your preferences. Do you prefer flower, vaping, or edibles?" """
 
 AGE_COMPLIANCE_PROMPT = """## AGE VERIFICATION (highest priority)
 
@@ -76,7 +78,14 @@ Before calling smart_search for a product recommendation, you MUST collect TWO s
 2. **Consumption form** — how does the customer want to consume? (e.g. flower, edibles/gummies, vaping, pre-rolls)
 
 Collection rules:
-- Both signals present (from current message OR conversation history) → call smart_search immediately as a tool call. Do NOT generate text saying "I'll find options" or "just a moment" — make the tool call directly without announcing it.
+- **HARD GATE — Both signals present** (from current message OR conversation history) → your ONLY valid action is a tool call to smart_search. You MUST NOT output any text at all before the tool call — not even a short acknowledgment like "Got it!" or "Great choice!". Any text output means the tool call will NOT happen and the customer gets no recommendation.
+  - ❌ "Got it! I'll find some options for you. Just a moment!" (FORBIDDEN — any text before tool call causes the tool call to never happen)
+  - ❌ "Just a moment while I find the best options for you." (FORBIDDEN)
+  - ❌ "I'll look for some options for you!" (FORBIDDEN)
+  - ❌ "Would you like me to search for options now?" (FORBIDDEN — never ask permission to search)
+  - ❌ "Let me find that for you!" / "I'll search for that!" (FORBIDDEN)
+  - ✅ [tool call only — zero text output before it]
+  - **If customer gives multiple form options** ("vape or flower", "flower or vaping", "vaping or flower"): pick the form that allows an immediate search. Priority: Flower > Vaporizers (Vaporizers require a hardware gate question first). Example: "vape or flower" → treat as Flower (category='Flower', NOT 'Pre-rolls'), call smart_search immediately with the known strain/effect signal. Do NOT ask whether they mean "pre-roll or loose flower" — when a customer says "flower" they mean the Flower category.
 - Neither signal present → ask about **effect or scenario** first. ONE question only. This includes general purchase intent ("I'd like to buy something", "I want to get something", "I'm looking for something", "what do you recommend?") — treat them all as no-signal and ask about experience first.
   - ✅ "What kind of experience are you looking for? Something relaxing, energizing, or focusing?"
   - ❌ "What are you looking for and do you prefer flower or edibles?" (two questions in one)
@@ -163,6 +172,7 @@ WEAK SIGNAL → infer and search, do not ask:
 - "I'm tired" → infer Relaxed, Nighttime
 - "something for the weekend" → infer Social, Hybrid
 - "something light" → infer low THC, mild effects
+- **Negative outcome constraint** ("don't want to feel wrecked tomorrow", "not too intense", "nothing too heavy", "don't want a hangover", "don't want to be out of it") → infer low-dose / Relaxed; if form is already known, this IS a complete effect signal — call smart_search immediately. Do NOT ask about THC preference or dosage.
 - Briefly acknowledge your inference: "Sounds like you want something to help you unwind —"
 
 **BROWSING QUERY** ("What do you have?", "What's new?", "Show me everything", "What do you carry?"):
@@ -188,7 +198,8 @@ NO SIGNAL → ask ONE question, the one that unlocks the most:
   - No effect or strain known → "What kind of experience are you after — something relaxing, energizing, or focusing?" (ask Step 1 question first)
 - Rule: lead-in MUST be 1 sentence max; the question itself counts as your ONE question for the turn.
 - Exception: beginner + relaxing intent → default Edibles, skip the form question
-- **Flower exception**: if form=Flower (or Pre-rolls) AND no strain type (indica/sativa/hybrid) specified → ask: "Are you looking for Sativa, Indica, or Hybrid?" — do NOT ask about experience/effects
+- **Flower exception**: if form=Flower (or Pre-rolls) AND no strain type (indica/sativa/hybrid) specified AND no clear effect signal → ask: "Are you looking for Sativa, Indica, or Hybrid?" — do NOT ask about experience/effects
+  - **Exception to the exception**: if you (the assistant) have ALREADY identified the likely strain type from context in a previous turn (e.g., you said "indica strains are your best bet" or "that sounds like an indica"), that strain type IS known — do NOT ask again. Use it and call smart_search immediately.
 
 **Vaporizer Hardware Rule** — When form=Vaporizers is confirmed but hardware type is unknown:
 - Ask about the three hardware types: disposable, 510 cartridge, and pod.
@@ -482,6 +493,22 @@ _VAPE_HARDWARE_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_VAPE_FLOWER_ALTERNATIVE = re.compile(
+    r"\b(vapes?|vaping|vaporizers?)\s+(or|and)\s+(flower|pre.?rolls?)\b"
+    r"|\b(flower|pre.?rolls?)\s+(or|and)\s+(vapes?|vaping|vaporizers?)\b",
+    re.IGNORECASE,
+)
+
+_NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
+    r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
+    r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
+    r"\bnothing\s+too\s+(heavy|intense|strong)\b|"
+    r"\b(without|no)\s+(a\s+)?hangover\b|"
+    r"\b(do\s*n'?t|do\s+not)\s+want\s+(a\s+)?hangover\b|"
+    r"\bnot\s+(wrecked|hammered|destroyed)\s+tomorrow\b",
+    re.IGNORECASE,
+)
+
 _PRICE_FEEDBACK_KEYWORDS = re.compile(
     r"\b(too expensive|pricey|cheaper|more affordable|lower price|less expensive|something cheaper)\b",
     re.IGNORECASE,
@@ -554,10 +581,19 @@ def is_vape_hardware_unknown_query(user_message: str, history: list[dict]) -> bo
     """
     Return True if vape form is known but hardware type (disposable/510/pod/cartridge) is unspecified.
     Used to force LLM to ask hardware question before searching.
+    Only checks USER messages for vape intent — ignores assistant messages that may offer vaping as an option.
     """
-    all_text = user_message + " " + " ".join(msg.get("content", "") for msg in history)
-    if not _VAPE_FORM_KEYWORDS.search(all_text):
+    # "vape or flower" / "flower or vape" → treat as Flower, skip hardware gate
+    if _VAPE_FLOWER_ALTERNATIVE.search(user_message):
         return False
+    # Only look at user-side messages for vape intent
+    user_text = user_message + " " + " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    )
+    if not _VAPE_FORM_KEYWORDS.search(user_text):
+        return False
+    # Hardware keyword can appear anywhere (user or assistant)
+    all_text = user_message + " " + " ".join(msg.get("content", "") for msg in history)
     if _VAPE_HARDWARE_KEYWORDS.search(all_text):
         return False
     return True
@@ -856,7 +892,7 @@ def build_messages(
 # ── Agent loop ────────────────────────────────────────────────────────────────
 
 def _determine_tool_choice(user_message: str, history: list[dict]) -> str:
-    """Return 'none' or 'auto' based on query classification."""
+    """Return 'none', 'auto', or 'required' based on query classification."""
     if is_medical_query(user_message):
         return "none"
     if is_vague_query(user_message):
@@ -869,6 +905,11 @@ def _determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_generic_rejection_query(user_message):
         return "none"
+    # Negative strength constraint + form known → force tool call (LLM tends to stall on ambiguous weak signals)
+    all_history_text = " ".join(msg.get("content", "") for msg in history)
+    form_known = bool(_FORM_KEYWORDS.search(user_message)) or bool(_FORM_KEYWORDS.search(all_history_text))
+    if _NEGATIVE_STRENGTH_CONSTRAINT.search(user_message) and form_known:
+        return "required"
     return "auto"
 
 
@@ -894,6 +935,28 @@ def _prepare_messages(
             "\n\n[IMMEDIATE ACTION REQUIRED]: Customer said prices are too high but has NOT specified a budget. "
             "Your response MUST be ONE question only: ask what price range works for them. "
             "Do NOT write 'let me find' or 'I'll look for' anything. Just ask: 'What price range works for you?'"
+        )
+
+    # Inject action instruction when customer gives "vape or flower" alternatives
+    if _VAPE_FLOWER_ALTERNATIVE.search(user_message):
+        messages[0]["content"] += (
+            "\n\n[IMMEDIATE ACTION REQUIRED]: Customer said 'vape or flower' (or similar). "
+            "Per INFORMATION GATHERING rules: 'flower' is the selected form — category='Flower'. "
+            "Both signals are now complete. Your ONLY valid action is to call smart_search immediately. "
+            "DO NOT output any text before the tool call. DO NOT ask about pre-rolls. DO NOT ask about hardware type."
+        )
+
+    # Inject action instruction when customer gives negative strength constraint + form is known
+    all_history_text = " ".join(msg.get("content", "") for msg in history)
+    form_in_message = bool(_FORM_KEYWORDS.search(user_message))
+    form_in_history = bool(_FORM_KEYWORDS.search(all_history_text))
+    if _NEGATIVE_STRENGTH_CONSTRAINT.search(user_message) and (form_in_message or form_in_history):
+        messages[0]["content"] += (
+            "\n\n[IMMEDIATE ACTION REQUIRED]: Customer expressed a negative outcome constraint (e.g. 'don't want to feel wrecked'). "
+            "Per INFORMATION GATHERING rules: this is a complete weak effect signal — infer low-dose/Relaxed. "
+            "Form is already known from this message or conversation history. "
+            "Both signals are complete. Your ONLY valid action is to call smart_search immediately. "
+            "DO NOT output any text before the tool call. DO NOT ask about THC level or dosage."
         )
 
     return messages
