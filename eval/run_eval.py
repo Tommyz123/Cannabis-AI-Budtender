@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 # ── 配置 ──────────────────────────────────────────────────────────────────────
 DATASET_PATH = PROJECT_ROOT / "golden_dataset_v2.json"
 CSV_PATH = PROJECT_ROOT / "data" / "NYE4.0_v3.csv"
+DB_PATH = PROJECT_ROOT / "data" / "products.db"
 REPORTS_DIR = PROJECT_ROOT / "reports"
 
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
@@ -593,12 +594,12 @@ def main():
     logger.info("数据集版本：%s，共 %d 个用例", dataset.get("version"), dataset.get("total_cases"))
 
     # 2. 初始化 ProductManager
-    if not CSV_PATH.exists():
-        logger.error("产品 CSV 不存在：%s", CSV_PATH)
+    if not DB_PATH.exists():
+        logger.error("产品 DB 不存在：%s", DB_PATH)
         sys.exit(1)
 
     pm = ProductManager()
-    pm.load(str(CSV_PATH))
+    pm.load(str(DB_PATH))
     logger.info("产品数据已加载：%d 条", pm.total_count)
 
     # 3. 过滤数据集（--tc 参数）

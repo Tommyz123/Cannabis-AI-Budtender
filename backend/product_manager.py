@@ -1,84 +1,85 @@
 """Product data management module for AI Budtender.
 
-Loads the product CSV, builds category indexes, generates compact JSON,
+Loads the product SQLite database, builds category indexes, generates compact JSON,
 and applies beginner safety filtering with fallback logic.
 """
 
 import json
+import sqlite3
+
 import pandas as pd
-from backend.config import CSV_PATH, BEGINNER_THC_LIMITS
+
+from backend.config import DB_PATH, BEGINNER_THC_LIMITS
+
+# THC unit is determined by category (not stored in DB)
+THC_UNIT_BY_CATEGORY: dict[str, str] = {
+    "Flower": "%",
+    "Pre-rolls": "%",
+    "Vaporizers": "%",
+    "Concentrates": "%",
+    "Edibles": "mg",
+    "Beverages": "mg",
+    "Tincture": "mg",
+    "Topicals": "mg",
+}
 
 _BEGINNER_EXPERIENCE = {"Beginner", "All Levels"}
 _INTERMEDIATE_EXPERIENCE = {"Beginner", "Intermediate", "All Levels"}
-_STRAIN_TYPE_KEYWORDS = {"indica", "sativa", "hybrid"}
-
-_COMPACT_KEY_MAP = {
-    "id": "id",
-    "Strain": "s",
-    "Company": "c",
-    "Categories": "cat",
-    "SubCategory": "sub",
-    "Types": "t",
-    "thc": "thc",
-    "Price": "p",
-    "PriceRange": "pr",
-    "Feelings": "f",
-    "ActivityScenario": "sc",
-    "TimeOfDay": "tod",
-    "ExperienceLevel": "xl",
-    "ConsumptionMethod": "cm",
-    "OnsetTime": "on",
-    "Duration": "dur",
-    "FlavorProfile": "flv",
-    "HardwareType": "hw",
-}
 
 
 def _build_thc_string(row: pd.Series) -> str:
     """Return THC level + unit as a compact string, e.g. '22%' or '5mg'."""
-    level = row["THCLevel"]
-    unit = row["THCUnit"]
+    level = row["thc_level"]
+    unit = row.get("thc_unit", "")
     if pd.isna(level):
         return ""
-    if pd.isna(unit):
-        return str(level)
-    return f"{level}{unit}"
+    return f"{level}{unit}" if unit else str(level)
 
 
 def _row_to_compact(row: pd.Series) -> dict:
-    """Convert a DataFrame row to compact JSON dict format (PRD section 11)."""
+    """Convert a DataFrame row to compact JSON dict format."""
     record = {
         "id": int(row["id"]),
-        "s": str(row["Strain"]) if not pd.isna(row["Strain"]) else "",
-        "c": str(row["Company"]) if not pd.isna(row["Company"]) else "",
-        "cat": str(row["Categories"]) if not pd.isna(row["Categories"]) else "",
-        "sub": str(row["SubCategory"]) if not pd.isna(row["SubCategory"]) else "",
-        "t": str(row["Types"]) if not pd.isna(row["Types"]) else "",
+        "s": str(row["product"]) if not pd.isna(row["product"]) else "",
+        "c": str(row["brand"]) if not pd.isna(row["brand"]) else "",
+        "cat": str(row["category"]) if not pd.isna(row["category"]) else "",
+        "sub": str(row["sub_category"]) if not pd.isna(row["sub_category"]) else "",
+        "t": str(row["strain_type"]) if not pd.isna(row["strain_type"]) else "",
         "thc": _build_thc_string(row),
-        "p": float(row["Price"]) if not pd.isna(row["Price"]) else 0.0,
-        "pr": str(row["PriceRange"]) if not pd.isna(row["PriceRange"]) else "",
-        "f": str(row["Feelings"]) if not pd.isna(row["Feelings"]) else "",
-        "sc": str(row["ActivityScenario"]) if not pd.isna(row["ActivityScenario"]) else "",
-        "tod": str(row["TimeOfDay"]) if not pd.isna(row["TimeOfDay"]) else "",
-        "xl": str(row["ExperienceLevel"]) if not pd.isna(row["ExperienceLevel"]) else "",
-        "cm": str(row["ConsumptionMethod"]) if not pd.isna(row["ConsumptionMethod"]) else "",
-        "on": str(row["OnsetTime"]) if not pd.isna(row["OnsetTime"]) else "",
-        "dur": str(row["Duration"]) if not pd.isna(row["Duration"]) else "",
+        "p": float(row["price"]) if not pd.isna(row["price"]) else 0.0,
+        "pr": str(row["price_range"]) if not pd.isna(row["price_range"]) else "",
+        "f": str(row["effects"]) if not pd.isna(row["effects"]) else "",
+        "sc": str(row["activity_scenario"]) if not pd.isna(row["activity_scenario"]) else "",
+        "tod": str(row["time_of_day"]) if not pd.isna(row["time_of_day"]) else "",
+        "xl": str(row["experience_level"]) if not pd.isna(row["experience_level"]) else "",
+        "cm": str(row["consumption_method"]) if not pd.isna(row["consumption_method"]) else "",
+        "on": str(row["onset_time"]) if not pd.isna(row["onset_time"]) else "",
+        "dur": str(row["duration"]) if not pd.isna(row["duration"]) else "",
     }
     # Optional fields: include only when non-empty
-    flv = row["FlavorProfile"]
-    if not pd.isna(flv) and str(flv).strip():
+    flv = row.get("flavor_profile")
+    if flv is not None and not pd.isna(flv) and str(flv).strip():
         record["flv"] = str(flv)
-    hw = row["HardwareType"]
-    if not pd.isna(hw) and str(hw).strip():
+    hw = row.get("hardware_type")
+    if hw is not None and not pd.isna(hw) and str(hw).strip():
         record["hw"] = str(hw)
-    wt = row["UnitWeight"]
-    if not pd.isna(wt) and str(wt).strip():
+    wt = row.get("unit_weight")
+    if wt is not None and not pd.isna(wt) and str(wt).strip():
         record["wt"] = str(wt)
-    pk = row["PackSize"]
-    if not pd.isna(pk) and str(pk).strip():
+    pk = row.get("pack_size")
+    if pk is not None and not pd.isna(pk):
         record["pk"] = str(int(pk))
     return record
+
+
+def _extract_hardware_type(attrs_str) -> str | None:
+    """Extract hardware_type from attributes JSON string."""
+    if not attrs_str:
+        return None
+    try:
+        return json.loads(attrs_str).get("hardware_type")
+    except (json.JSONDecodeError, AttributeError):
+        return None
 
 
 class ProductManager:
@@ -89,10 +90,18 @@ class ProductManager:
         self._category_index: dict[str, pd.DataFrame] = {}
         self._all_compact_json: str = "[]"
 
-    def load(self, csv_path: str = CSV_PATH) -> None:
-        """Load the product CSV and build all indexes."""
-        df = pd.read_csv(csv_path)
-        df.insert(0, "id", range(1, len(df) + 1))
+    def load(self, db_path: str = DB_PATH) -> None:
+        """Load products from SQLite and build all indexes."""
+        con = sqlite3.connect(db_path)
+        df = pd.read_sql_query("SELECT * FROM products", con)
+        con.close()
+
+        # Derive thc_unit from category (replaces THCUnit column)
+        df["thc_unit"] = df["category"].map(THC_UNIT_BY_CATEGORY).fillna("")
+
+        # Extract hardware_type from attributes JSON for query search
+        df["hardware_type"] = df["attributes"].apply(_extract_hardware_type)
+
         self._df = df
         self._build_category_index()
         self._all_compact_json = self._generate_compact_json(df)
@@ -101,7 +110,7 @@ class ProductManager:
         """Build a dict mapping category name → filtered DataFrame."""
         self._category_index = {
             cat: group.copy()
-            for cat, group in self._df.groupby("Categories")
+            for cat, group in self._df.groupby("category")
         }
 
     def _generate_compact_json(self, df: pd.DataFrame) -> str:
@@ -135,7 +144,7 @@ class ProductManager:
         """
         Return compact JSON of products safe for beginners.
 
-        Applies hard safety rules (PRD section 6), with two fallback levels
+        Applies hard safety rules, with two fallback levels
         if filtered count drops below 3.
         """
         df = self._apply_beginner_filter(self._df, _BEGINNER_EXPERIENCE)
@@ -184,7 +193,7 @@ class ProductManager:
         if list_sub_types:
             overview = {}
             for cat, cdf in self._category_index.items():
-                subs = cdf["SubCategory"].dropna().unique().tolist()
+                subs = cdf["sub_category"].dropna().unique().tolist()
                 overview[cat] = {"count": len(cdf), "subcategories": subs}
             return {"overview": overview}
 
@@ -236,77 +245,75 @@ class ProductManager:
             if matched_cat:
                 df = self._category_index[matched_cat].copy()
             else:
-                df = df[df["Categories"].str.lower() == cat_lower]
+                df = df[df["category"].str.lower() == cat_lower]
 
         # 2. Strain type filter (Indica / Sativa / Hybrid)
         if strain_type:
-            df = df[df["Types"].str.lower() == strain_type.lower()]
+            df = df[df["strain_type"].str.lower() == strain_type.lower()]
 
         # 3. Exclude categories
         if exclude_categories:
             excl_lower = [c.lower() for c in exclude_categories]
-            df = df[~df["Categories"].str.lower().isin(excl_lower)]
+            df = df[~df["category"].str.lower().isin(excl_lower)]
 
-        # 4. Effects filter (Feelings column contains keyword)
+        # 4. Effects filter (effects column contains keyword)
         if effects:
             for effect in effects:
-                df = df[df["Feelings"].str.contains(effect, case=False, na=False)]
+                df = df[df["effects"].str.contains(effect, case=False, na=False)]
 
         # 5. Exclude effects
         if exclude_effects:
             for eff in exclude_effects:
-                df = df[~df["Feelings"].str.contains(eff, case=False, na=False)]
+                df = df[~df["effects"].str.contains(eff, case=False, na=False)]
 
         # 6. min_thc (percentage products only)
         if min_thc is not None:
-            pct_mask = df["THCUnit"] == "%"
-            df = df[~pct_mask | (df["THCLevel"] >= min_thc)]
+            pct_mask = df["thc_unit"] == "%"
+            df = df[~pct_mask | (df["thc_level"] >= min_thc)]
 
         # 6b. max_thc (percentage products only)
         if max_thc is not None:
-            pct_mask = df["THCUnit"] == "%"
-            df = df[~pct_mask | (df["THCLevel"] <= max_thc)]
+            pct_mask = df["thc_unit"] == "%"
+            df = df[~pct_mask | (df["thc_level"] <= max_thc)]
 
-        # 6. max_price filter
+        # 7. max_price filter
         if max_price is not None:
-            df = df[df["Price"].fillna(0) <= max_price]
+            df = df[df["price"].fillna(0) <= max_price]
 
-        # 7. budget_target: keep products within 120% of target
+        # 8. budget_target: keep products within 120% of target
         if budget_target is not None and max_price is None:
-            df = df[df["Price"].fillna(0) <= budget_target * 1.2]
+            df = df[df["price"].fillna(0) <= budget_target * 1.2]
 
-        # 8. time_of_day filter
+        # 9. time_of_day filter
         if time_of_day:
             tod_lower = time_of_day.lower()
             df = df[
-                df["TimeOfDay"].str.lower().str.contains(tod_lower, na=False)
-                | (df["TimeOfDay"].str.lower() == "anytime")
+                df["time_of_day"].str.lower().str.contains(tod_lower, na=False)
+                | (df["time_of_day"].str.lower() == "anytime")
             ]
 
-        # 9. activity_scenario filter
+        # 10. activity_scenario filter
         if activity_scenario:
             df = df[
-                df["ActivityScenario"].str.contains(
+                df["activity_scenario"].str.contains(
                     activity_scenario, case=False, na=False
                 )
             ]
 
-        # 10. unit_weight filter
+        # 11. unit_weight filter
         if unit_weight:
-            df = df[df["UnitWeight"].str.lower() == unit_weight.lower()]
+            df = df[df["unit_weight"].str.lower() == unit_weight.lower()]
 
-        # 11. free-text query (Strain + Types + Feelings + UnitWeight + Description + FlavorProfile + HardwareType)
-        # regex=False: treat query as literal string, not regex — prevents | and other special chars from being misinterpreted
+        # 12. free-text query (product + strain_type + effects + unit_weight + description + flavor_profile + hardware_type)
+        # regex=False: treat query as literal string, not regex
         if query:
-            desc_col = "Description" if "Description" in df.columns else None
-            mask = df["Strain"].str.contains(query, case=False, na=False, regex=False)
-            mask |= df["Types"].str.contains(query, case=False, na=False, regex=False)
-            mask |= df["Feelings"].str.contains(query, case=False, na=False, regex=False)
-            mask |= df["UnitWeight"].str.contains(query, case=False, na=False, regex=False)
-            if desc_col:
-                mask |= df[desc_col].str.contains(query, case=False, na=False, regex=False)
-            mask |= df["FlavorProfile"].str.contains(query, case=False, na=False, regex=False)
-            mask |= df["HardwareType"].str.contains(query, case=False, na=False, regex=False)
+            mask = df["product"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["strain_type"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["effects"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["unit_weight"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["description"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["flavor_profile"].str.contains(query, case=False, na=False, regex=False)
+            mask |= df["hardware_type"].str.contains(query, case=False, na=False, regex=False)
             df = df[mask]
 
         # Beginner safety filter
@@ -320,20 +327,19 @@ class ProductManager:
         def _parse_weight(wt):
             """Extract numeric value from weight string like '1g', '0.5g', '2g'."""
             try:
-                return float(str(wt).replace('g', '').strip())
+                return float(str(wt).replace("g", "").strip())
             except (ValueError, TypeError):
                 return 0.0
 
-        if not df.empty and "UnitWeight" in df.columns:
+        if not df.empty and "unit_weight" in df.columns:
             df = df.copy()
-            df["_weight_num"] = df["UnitWeight"].apply(_parse_weight)
+            df["_weight_num"] = df["unit_weight"].apply(_parse_weight)
             if budget_target is not None:
-                # Budget intent: show products closest to budget target first
-                df["_price_dist"] = (df["Price"].fillna(0) - budget_target).abs()
+                df["_price_dist"] = (df["price"].fillna(0) - budget_target).abs()
                 df = df.sort_values(["_price_dist"], ascending=[True])
                 df = df.drop(columns=["_price_dist"])
             else:
-                df = df.sort_values(["_weight_num", "Price"], ascending=[False, False])
+                df = df.sort_values(["_weight_num", "price"], ascending=[False, False])
             df = df.drop(columns=["_weight_num"])
 
         return df
@@ -378,16 +384,17 @@ class ProductManager:
         def _run(new_category, new_strain_type, new_query, new_min_thc, new_max_thc,
                  new_max_price, new_budget, note, flavor_priority=False):
             df = self._apply_filters(
-                df_base.copy(), new_category, new_strain_type, effects, exclude_effects, exclude_categories,
-                new_min_thc, new_max_thc, new_max_price, new_budget, time_of_day,
-                activity_scenario, unit_weight, new_query, is_beginner,
+                df_base.copy(), new_category, new_strain_type, effects, exclude_effects,
+                exclude_categories, new_min_thc, new_max_thc, new_max_price, new_budget,
+                time_of_day, activity_scenario, unit_weight, new_query, is_beginner,
             )
-            if flavor_priority and new_query and not df.empty and "FlavorProfile" in df.columns:
-                # Sort: FlavorProfile matches first, then by price proximity
+            if flavor_priority and new_query and not df.empty and "flavor_profile" in df.columns:
                 df = df.copy()
-                df["_flv_match"] = df["FlavorProfile"].str.contains(new_query, case=False, na=False).astype(int)
+                df["_flv_match"] = df["flavor_profile"].str.contains(
+                    new_query, case=False, na=False
+                ).astype(int)
                 if new_budget is not None:
-                    df["_price_dist"] = (df["Price"].fillna(0) - new_budget).abs()
+                    df["_price_dist"] = (df["price"].fillna(0) - new_budget).abs()
                     df = df.sort_values(["_flv_match", "_price_dist"], ascending=[False, True])
                     df = df.drop(columns=["_price_dist"])
                 else:
@@ -469,31 +476,31 @@ class ProductManager:
         limits = BEGINNER_THC_LIMITS
 
         # Rule 1: exclude concentrates (always)
-        mask = df["Categories"] != "Concentrates"
+        mask = df["category"] != "Concentrates"
 
         # Rule 2: experience level (optional)
         if experience_levels is not None:
-            mask &= df["ExperienceLevel"].isin(experience_levels)
+            mask &= df["experience_level"].isin(experience_levels)
 
-        # Rule 3: Edibles THC <= 5mg
-        edibles_mask = (df["THCUnit"] == "mg") & (
-            df["THCLevel"] > limits["edibles_mg"]
+        # Rule 3: Edibles/Beverages THC <= 5mg (mg-unit, per-serving dose)
+        edibles_mask = (df["thc_unit"] == "mg") & (
+            df["thc_level"] > limits["edibles_mg"]
         )
         mask &= ~edibles_mask
 
         # Rule 4: Flower/Pre-rolls THC <= 20%
         flower_cats = {"Flower", "Pre-rolls"}
         flower_mask = (
-            df["THCUnit"] == "%"
-        ) & df["Categories"].isin(flower_cats) & (
-            df["THCLevel"] > limits["flower_percent"]
+            df["thc_unit"] == "%"
+        ) & df["category"].isin(flower_cats) & (
+            df["thc_level"] > limits["flower_percent"]
         )
         mask &= ~flower_mask
 
         # Rule 5: Vaporizers THC <= 70%
-        vape_mask = (df["THCUnit"] == "%") & (
-            df["Categories"] == "Vaporizers"
-        ) & (df["THCLevel"] > limits["vaporizers_percent"])
+        vape_mask = (df["thc_unit"] == "%") & (
+            df["category"] == "Vaporizers"
+        ) & (df["thc_level"] > limits["vaporizers_percent"])
         mask &= ~vape_mask
 
         return df[mask].copy()

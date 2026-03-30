@@ -512,3 +512,24 @@
 **涉及文件：** `backend/llm_service.py`、`golden_dataset_v2.json`
 
 **测试结果：** tc_C5 稳定 4/4（100%）；全量 20/20（100%）无回退
+
+## [2026-03-29] 修复 | 修正 Beverages 1:1 产品 THCLevel 录入错误
+- 变更内容：Grapefruit | 1:1 | Single 和 Pineapple Mango | 1:1 | Single 的 THCLevel 从 20mg 改为 10mg
+- 涉及文件：data/NYE4.0_v3.csv
+- 测试结果：验证 CSV 行数不变（217条），目标字段值正确
+
+## [2026-03-29] 新增 | 创建 SQLite DB 建表脚本和 migration 脚本
+- 变更内容：创建 scripts/setup_db.py（建 products + sessions 表）和 scripts/migrate_csv_to_sqlite.py（CSV→SQLite 全量迁移）
+- 涉及文件：scripts/setup_db.py, scripts/migrate_csv_to_sqlite.py, data/products.db
+- 关键处理：Edibles Drink→Beverages，1:1饮料补 CBD other_cannabinoids，Vaporizers sub_category 统一，attributes JSON 按品类组装
+- 测试结果：217条全部插入，数据抽检通过
+
+## [2026-03-29] 重构 | ProductManager 从 CSV+Pandas 迁移到 SQLite
+- 变更内容：product_manager.py 改为从 SQLite 加载，更新所有列名引用，新增 thc_unit 派生列和 hardware_type 从 attributes 提取；config.py 新增 DB_PATH；测试文件 conftest.py / test_product_manager.py / test_api.py 更新 fixture 和列名断言
+- 涉及文件：backend/product_manager.py, backend/config.py, tests/conftest.py, tests/test_product_manager.py, tests/test_api.py
+- 测试结果：57/57 全通过
+
+## [2026-03-29] 新增 | 更新 eval/run_eval.py 使用 DB_PATH + 更新 context.md
+- 变更内容：eval/run_eval.py 改用 DB_PATH 加载产品；context.md 全面更新反映 SQLite 新架构
+- 涉及文件：eval/run_eval.py, planning/context.md
+- 测试结果：全量 Eval 21/21 通过（100%）

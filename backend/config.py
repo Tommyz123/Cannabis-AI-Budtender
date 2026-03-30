@@ -7,6 +7,7 @@ load_dotenv()
 
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
 CSV_PATH: str = os.getenv("CSV_PATH", "data/NYE4.0_v3.csv")
+DB_PATH: str = os.getenv("DB_PATH", "data/products.db")
 MAX_HISTORY_MESSAGES: int = int(os.getenv("MAX_HISTORY_MESSAGES", "20"))
 MODEL_NAME: str = os.getenv("MODEL_NAME", "gpt-4o-mini")
 

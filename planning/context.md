@@ -1,33 +1,89 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-03-11 | 项目阶段: 修复 6 个产品可信度问题（搜索缺口、total 语义、预算排序、Beginner 打通）
+最后更新: 2026-03-29 | 项目阶段: 数据库架构升级完成（CSV+Pandas → SQLite+JSON）
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
 
 ## 技术栈
-Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini) + Pydantic 2.12.5 + 原生 HTML/CSS/JS 前端
+Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini) + Pydantic 2.12.5 + 原生 HTML/CSS/JS 前端
 
 ## 关键配置参数
 | 参数 | 当前值 | 文件位置 |
 |------|--------|---------|
 | OPENAI_API_KEY | 见 .env | .env |
-| CSV_PATH | data/NYE4.0_v3.csv | backend/config.py:6 |
-| MAX_HISTORY_MESSAGES | 20 | backend/config.py:7 |
-| MODEL_NAME | gpt-4o-mini | backend/config.py:8 |
-| BEGINNER_THC_LIMITS | edibles_mg=5, flower_percent=20, vaporizers_percent=70 | backend/config.py:10-14 |
+| DB_PATH | data/products.db | backend/config.py |
+| CSV_PATH | data/NYE4.0_v3.csv | backend/config.py（已退役，仅作迁移来源保留）|
+| MAX_HISTORY_MESSAGES | 20 | backend/config.py |
+| MODEL_NAME | gpt-4o-mini | backend/config.py |
+| BEGINNER_THC_LIMITS | edibles_mg=5, flower_percent=20, vaporizers_percent=70 | backend/config.py |
 
 > ⚠️ 禁止在此填写 API Key、密码等敏感值，敏感值只存放在 .env 文件中。
 
 ## 稳定区（禁止改动）
-- `data/NYE4.0_v3.csv` — 原始产品数据，217 条记录
+- `data/NYE4.0_v3.csv` — 原始产品数据（已退役为只读迁移来源，217 条记录）
+- `data/products.db` — 主产品数据库（SQLite，217 条记录）
 - `backend/config.py` — 配置已稳定，不要随意增删字段
+
+## 数据库结构（data/products.db）
+
+### products 表（主产品表）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| id | INTEGER PK | 自增主键 |
+| product | TEXT | 产品名（原 Strain）|
+| brand | TEXT | 品牌（原 Company）|
+| category | TEXT | 品类（原 Categories）|
+| sub_category | TEXT | 子分类 |
+| strain_type | TEXT | 株型（原 Types：Hybrid/Indica/Sativa）|
+| thc_level | REAL | THC 含量（单位由品类决定）|
+| price | REAL | 价格 |
+| price_range | TEXT | 价格区间 |
+| effects | TEXT | 效果（原 Feelings）|
+| flavor_profile | TEXT | 口味 |
+| time_of_day | TEXT | 使用时段 |
+| activity_scenario | TEXT | 使用场景 |
+| experience_level | TEXT | 经验等级 |
+| consumption_method | TEXT | 使用方式 |
+| onset_time | TEXT | 起效时间 |
+| duration | TEXT | 持续时间 |
+| unit_weight | TEXT | 单位重量 |
+| pack_size | INTEGER | 包装数量 |
+| description | TEXT | 产品描述 |
+| attributes | TEXT | JSON，品类专属字段 |
+
+**THC 单位规则（代码常量，不存 DB）**：
+- `%`：Flower / Pre-rolls / Vaporizers / Concentrates
+- `mg`：Edibles（每颗）/ Beverages（每罐）/ Tincture（整瓶总量）/ Topicals（产品总量）
+
+**attributes JSON 按品类结构**：
+- Flower：terpenes, total_terpenes_pct, [infused], [other_cannabinoids]
+- Pre-rolls：terpenes, total_terpenes_pct, pre_roll_config, [infused], [other_cannabinoids]
+- Edibles：terpenes, [thc_total_mg], [dietary], [other_cannabinoids], [infused]
+- Vaporizers：terpenes, total_terpenes_pct, hardware_type, oil_type, [other_cannabinoids]
+- Beverages：terpenes, fast_acting, [dietary], [other_cannabinoids]
+- Concentrates：terpenes, total_terpenes_pct, [other_cannabinoids]
+- Tincture：terpenes, bottle_volume_ml, [dietary], [other_cannabinoids]
+- Topicals：terpenes, [dietary], [other_cannabinoids]
+
+### sessions 表（预留，暂未使用）
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| session_id | TEXT PK | 会话 UUID |
+| history | TEXT | 对话历史 JSON |
+| created_at | DATETIME | 创建时间 |
+| updated_at | DATETIME | 更新时间 |
+
+## 迁移脚本（一次性工具）
+- `scripts/setup_db.py` — 建表脚本（重新建库时使用）
+- `scripts/migrate_csv_to_sqlite.py` — CSV → SQLite 全量迁移
 
 ## 模块索引
 
 ### backend/config.py — 全局配置
 - `OPENAI_API_KEY: str` — 从环境变量读取
-- `CSV_PATH: str` — 产品 CSV 文件路径
+- `DB_PATH: str` — 产品 SQLite 数据库路径
+- `CSV_PATH: str` — 原始 CSV 路径（只读，已退役）
 - `MAX_HISTORY_MESSAGES: int` — 对话历史上限（20）
 - `MODEL_NAME: str` — OpenAI 模型名称
 - `BEGINNER_THC_LIMITS: dict` — 新手 THC 上限配置
@@ -38,14 +94,15 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `ChatResponse(reply, session_id, response_time_ms)` — 响应体（含耗时字段，单位毫秒）
 
 ### backend/product_manager.py — 产品数据管理
-- `ProductManager.load(csv_path) → None` — 加载 CSV，建立索引
+- `ProductManager.load(db_path) → None` — 从 SQLite 加载产品，建立索引
 - `ProductManager.get_all_compact_json() → str` — 全量产品 compact JSON
 - `ProductManager.get_beginner_compact_json() → str` — 新手安全过滤产品 JSON（含降级策略）
-- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit, is_beginner) → dict` — 多条件产品搜索，供 tool calling 调用；unit_weight 支持精确匹配过滤（如 '28g'=1oz）；total 返回实际命中数；有 budget_target 时按价格距离升序排序；free-text query 覆盖 FlavorProfile + HardwareType 列；is_beginner=True 时套用新手安全过滤
-- `ProductManager.get_category_summary_json() → str` — 返回品类数量统计 JSON（用于首轮对话最小 token 上下文）
+- `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit, is_beginner) → dict` — 多条件产品搜索；unit_weight 支持精确匹配；total 返回实际命中数；有 budget_target 时按价格距离升序；free-text query 覆盖 product/effects/flavor_profile/hardware_type/description；is_beginner=True 时套用新手安全过滤
+- `ProductManager.get_category_summary_json() → str` — 返回品类数量统计 JSON
 - `ProductManager.get_product_by_id(product_id) → dict | None` — 按 ID 返回单个产品
 - `ProductManager.total_count → int` — 已加载产品数
 - `ProductManager.category_index → dict` — 品类 → DataFrame 映射
+- `THC_UNIT_BY_CATEGORY: dict` — 品类 → THC 单位映射常量
 
 ### backend/llm_service.py — LLM 集成（Agent Loop）
 - `SYSTEM_PROMPT: str` — 完整 system prompt（医疗保护、Discovery-First、销售规则 A-E、语义映射）
@@ -54,23 +111,23 @@ Python 3.12.3 + FastAPI 0.135.1 + Pandas 2.2.3 + OpenAI API 2.26.0 (gpt-4o-mini)
 - `is_medical_query(user_message) → bool` — 检测医疗查询
 - `is_vague_query(user_message) → bool` — 检测模糊查询
 - `is_form_unknown_query(user_message, history) → bool` — 检测有效果但无形式的查询
-- `is_price_feedback_query(user_message) → bool` — 检测价格反馈查询（太贵/太便宜等）
-- `is_generic_rejection_query(user_message) → bool` — 检测通用拒绝查询（不喜欢/换一个等）
+- `is_price_feedback_query(user_message) → bool` — 检测价格反馈查询
+- `is_generic_rejection_query(user_message) → bool` — 检测通用拒绝查询
 - `is_vape_hardware_unknown_query(user_message, history) → bool` — 检测 vape 硬件类型未知查询
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
-- `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表（不注入产品 JSON）
-- `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop：LLM + tool calling；is_beginner=True 时注入 SESSION CONTEXT 提示，强制 LLM 始终传 is_beginner=true
+- `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表
+- `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop
 
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}
 - `POST /chat` — 接收 ChatRequest，返回 ChatResponse
-- `lifespan` — 启动时加载 CSV（通过 ProductManager）
+- `lifespan` — 启动时从 SQLite 加载产品（通过 ProductManager）
 
 ### frontend/ — Chat Widget
 - `frontend/index.html` — 主页面，包含悬浮按钮 + 对话框 HTML
 - `frontend/style.css` — Widget 样式
-- `frontend/chat.js` — 会话管理、API 调用、消息渲染（已移除 beginner 标记解析）
+- `frontend/chat.js` — 会话管理、API 调用、消息渲染
 
 ## 依赖关系
 ```
@@ -86,14 +143,15 @@ frontend/chat.js
                    │         └── tool_calls? → smart_search / get_product_details
                    │
                    ├──► ProductManager.search_products() ←── tool 执行
-                   │         └──► data/NYE4.0_v3.csv
+                   │         └──► data/products.db（SQLite）
                    │
                    └──► OpenAI API — 最终回复
 ```
 
 ## 已知限制（非代码问题）
 - CORS 当前允许所有源（*），生产部署时需限制为实际域名
-- 前端无单元测试框架（Task 5 使用手动测试）
+- 前端无单元测试框架（使用手动测试）
+- sessions 表已建，服务端会话持久化功能预留待后期实现
 - openai 2.x 为较新版本，API 接口未来可能变更
 
 ## 环境配置

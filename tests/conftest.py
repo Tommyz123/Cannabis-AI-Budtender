@@ -4,12 +4,13 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 from backend.main import app, _product_manager
+from backend.config import DB_PATH
 
 
 @pytest.fixture(scope="session", autouse=True)
 def load_products_once():
-    """Load product CSV once for the entire test session."""
-    _product_manager.load("data/NYE4.0_v3.csv")
+    """Load product DB once for the entire test session."""
+    _product_manager.load(DB_PATH)
 
 
 @pytest.fixture(scope="session")

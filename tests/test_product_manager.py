@@ -3,26 +3,24 @@
 import json
 import pytest
 from backend.product_manager import ProductManager
-
-
-CSV_PATH = "data/NYE4.0_v3.csv"
+from backend.config import DB_PATH
 
 
 @pytest.fixture(scope="module")
 def pm():
     """Loaded ProductManager fixture."""
     manager = ProductManager()
-    manager.load(CSV_PATH)
+    manager.load(DB_PATH)
     return manager
 
 
 def test_load_products(pm):
-    """Verify CSV loads correctly with expected row count and fields."""
+    """Verify DB loads correctly with expected row count and fields."""
     assert pm.total_count == 217
     df = pm._df
     required_cols = [
-        "Strain", "Company", "Categories", "THCLevel", "THCUnit",
-        "Price", "ExperienceLevel", "Feelings", "ConsumptionMethod",
+        "product", "brand", "category", "thc_level", "thc_unit",
+        "price", "experience_level", "effects", "consumption_method",
     ]
     for col in required_cols:
         assert col in df.columns, f"Missing column: {col}"
@@ -67,33 +65,33 @@ def test_beginner_filter_excludes_concentrates(pm):
 def test_beginner_filter_thc_edibles(pm):
     """Verify beginner filter: Edibles THC <= 5mg."""
     filtered = pm._apply_beginner_filter(pm._df, {"Beginner", "All Levels"})
-    edibles = filtered[filtered["Categories"] == "Edibles"]
+    edibles = filtered[filtered["category"] == "Edibles"]
     if not edibles.empty:
-        assert (edibles["THCLevel"] <= 5).all()
+        assert (edibles["thc_level"] <= 5).all()
 
 
 def test_beginner_filter_thc_flower(pm):
     """Verify beginner filter: Flower/Pre-rolls THC <= 20%."""
     filtered = pm._apply_beginner_filter(pm._df, {"Beginner", "All Levels"})
-    flower = filtered[filtered["Categories"].isin({"Flower", "Pre-rolls"})]
+    flower = filtered[filtered["category"].isin({"Flower", "Pre-rolls"})]
     if not flower.empty:
-        assert (flower["THCLevel"] <= 20).all()
+        assert (flower["thc_level"] <= 20).all()
 
 
 def test_beginner_filter_thc_vaporizers(pm):
     """Verify beginner filter: Vaporizers THC <= 70%."""
     filtered = pm._apply_beginner_filter(pm._df, {"Beginner", "All Levels"})
-    vapes = filtered[filtered["Categories"] == "Vaporizers"]
+    vapes = filtered[filtered["category"] == "Vaporizers"]
     if not vapes.empty:
-        assert (vapes["THCLevel"] <= 70).all()
+        assert (vapes["thc_level"] <= 70).all()
 
 
 def test_beginner_filter_experience_level(pm):
     """Verify beginner filter allows only Beginner and All Levels experience."""
     filtered = pm._apply_beginner_filter(pm._df, {"Beginner", "All Levels"})
-    non_concentrates = filtered[filtered["Categories"] != "Concentrates"]
+    non_concentrates = filtered[filtered["category"] != "Concentrates"]
     allowed = {"Beginner", "All Levels"}
-    assert non_concentrates["ExperienceLevel"].isin(allowed).all()
+    assert non_concentrates["experience_level"].isin(allowed).all()
 
 
 def test_fallback_level1(pm):
@@ -102,14 +100,14 @@ def test_fallback_level1(pm):
     level1 = pm._apply_beginner_filter(pm._df, {"Beginner", "Intermediate", "All Levels"})
     assert len(level1) >= len(level0)
     allowed = {"Beginner", "Intermediate", "All Levels"}
-    non_concentrates = level1[level1["Categories"] != "Concentrates"]
-    assert non_concentrates["ExperienceLevel"].isin(allowed).all()
+    non_concentrates = level1[level1["category"] != "Concentrates"]
+    assert non_concentrates["experience_level"].isin(allowed).all()
 
 
 def test_fallback_level2(pm):
     """Verify fallback level 2 opens experience level completely."""
     filtered = pm._apply_beginner_filter(pm._df, experience_levels=None)
-    assert "Concentrates" not in filtered["Categories"].values
+    assert "Concentrates" not in filtered["category"].values
     level1 = pm._apply_beginner_filter(pm._df, {"Beginner", "Intermediate", "All Levels"})
     assert len(filtered) >= len(level1)
 
