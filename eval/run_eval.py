@@ -90,6 +90,7 @@ class EvalResult:
     reply: str
     tool_calls: list = field(default_factory=list)
     criterion_results: list = field(default_factory=list)
+    elapsed_ms: int = 0
     error: str | None = None
     user_message: str = ""
     conversation_history: list = field(default_factory=list)
@@ -367,11 +368,12 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                         user_message=user_message,
                         product_manager=pm_wrapper,
                     )
+                elapsed_ms = int((time.time() - t_start) * 1000)
                 if _langfuse_enabled and langfuse_client:
                     langfuse_client.update_current_span(
                         input={"user_message": user_message},
                         output={"reply": actual_reply},
-                        metadata={"elapsed_ms": int((time.time() - t_start) * 1000)},
+                        metadata={"elapsed_ms": elapsed_ms},
                     )
 
             # ── span: tool_calls ───────────────────────────────────────────────
@@ -441,6 +443,7 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
                 reply=actual_reply,
                 tool_calls=tool_calls_log,
                 criterion_results=criterion_results,
+                elapsed_ms=elapsed_ms,
                 user_message=user_message,
                 conversation_history=history,
             )
@@ -498,6 +501,12 @@ def generate_report(results: list[EvalResult], dataset: dict) -> Path:
     passed = sum(1 for r in results if r.score >= 0.6 and r.rule_pass and r.error is None)
     pass_rate = passed / total * 100 if total > 0 else 0
 
+    # 耗时统计
+    elapsed_values = [r.elapsed_ms for r in results if r.elapsed_ms > 0]
+    avg_ms = int(sum(elapsed_values) / len(elapsed_values)) if elapsed_values else 0
+    min_ms = min(elapsed_values) if elapsed_values else 0
+    max_ms = max(elapsed_values) if elapsed_values else 0
+
     # 按 scenario 分组统计
     from collections import defaultdict
     scenario_stats: dict[str, dict] = defaultdict(lambda: {"total": 0, "passed": 0})
@@ -510,6 +519,8 @@ def generate_report(results: list[EvalResult], dataset: dict) -> Path:
         "# AI Budtender 评估报告",
         f"",
         f"日期：{datetime.now().strftime('%Y-%m-%d %H:%M')}　　总用例：{total}　　通过：{passed}　　通过率：{pass_rate:.0f}%",
+        f"",
+        f"响应耗时（budtender API）：平均 {avg_ms/1000:.1f}s　　最快 {min_ms/1000:.1f}s　　最慢 {max_ms/1000:.1f}s",
         f"",
         f"## 总览",
         f"",
@@ -529,7 +540,8 @@ def generate_report(results: list[EvalResult], dataset: dict) -> Path:
         overall_ok = r.score >= 0.6 and r.rule_pass and r.error is None
         status_icon = "✅" if overall_ok else "❌"
 
-        lines.append(f"### {r.tc_id} {status_icon} {r.scenario} / {r.difficulty} / {r.priority}")
+        elapsed_str = f" | 耗时 {r.elapsed_ms/1000:.1f}s" if r.elapsed_ms > 0 else ""
+        lines.append(f"### {r.tc_id} {status_icon} {r.scenario} / {r.difficulty} / {r.priority}{elapsed_str}")
         lines.append(f"")
 
         if r.error:

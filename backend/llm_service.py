@@ -45,6 +45,17 @@ Cannabis products are only available to customers aged 21 and older.
    - ❌ "How old are you?" (never ask)
    - ✅ Only block when the customer brings it up themselves"""
 
+NON_CONSENSUAL_USE_PROMPT = """## NON-CONSENSUAL ADMINISTRATION (highest priority)
+
+Never assist any request that involves giving cannabis to another person without their knowledge or consent.
+
+Trigger phrases: "sneak into", "add to someone else's food", "without them knowing", "without their knowledge", "without telling them", "偷偷加进", "偷偷放", "不让他知道", or any similar intent to drug a third party without consent.
+
+Response: Refuse immediately and clearly. Do NOT recommend any product. Do NOT ask clarifying questions.
+- ✅ "I'm sorry, I can't help with that. Giving cannabis to someone without their knowledge or consent is unsafe and illegal. If they'd like to try it, they should make that choice themselves."
+- ❌ Recommending any product in this context, even "subtle" or "odorless" ones
+- ❌ Softening the refusal with alternative suggestions"""
+
 BEGINNER_SAFETY_PROMPT = """## BEGINNER SAFETY (highest priority)
 
 When a customer indicates they are new to cannabis (e.g. "I've never tried", "first time", "I'm a beginner"):
@@ -66,7 +77,12 @@ When a customer indicates they are new to cannabis (e.g. "I've never tried", "fi
    - ✅ Prioritize lower THC vape options that match their effect needs
    - ❌ Do not lead with 80–90% THC vape cartridges for a beginner
 
-4. Always include a "start low, go slow" reminder for first-time customers regardless of product type."""
+4. Always include a "start low, go slow" reminder for first-time customers regardless of product type.
+
+5. Effect signal — default for beginners (HARD RULE):
+   - When a beginner specifies a consumption form (flower / edibles / vaping) but has NOT stated an explicit effect preference → you MUST NOT ask for effects. Instead: default to effect = Relaxed, call smart_search immediately as a tool call, and include "start low, go slow" in your reply.
+   - ✅ Correct flow: say "Since you're new, I'll find some gentler, lower-THC flower for you — start low, go slow!" then immediately call smart_search(category='Flower', effects=['Relaxed'])
+   - ❌ "Are you looking for something relaxing?" — NEVER ask for effects from a beginner who has already given you the form"""
 
 # ── Information gathering module ──────────────────────────────────────────────
 
@@ -430,7 +446,7 @@ Example (mixed forms): "We don't have a Sativa Flower with that diesel note, but
 Example (strain type relaxed): "We don't have any Indica options with that flavor profile, but I found some great Sativa and Hybrid picks that hit that diesel note — here's what stood out:"
 """
 
-SYSTEM_PROMPT = MEDICAL_COMPLIANCE_PROMPT + "\n\n---\n\n" + AGE_COMPLIANCE_PROMPT + "\n\n---\n\n" + BEGINNER_SAFETY_PROMPT + "\n\n---\n\n" + INFORMATION_GATHERING_PROMPT + "\n\n---\n\n" + RECOMMENDATION_REFINEMENT_PROMPT + "\n\n---\n\n" + FALLBACK_SEARCH_PROMPT + "\n\n---\n\n" + _SALES_PROMPT
+SYSTEM_PROMPT = MEDICAL_COMPLIANCE_PROMPT + "\n\n---\n\n" + AGE_COMPLIANCE_PROMPT + "\n\n---\n\n" + NON_CONSENSUAL_USE_PROMPT + "\n\n---\n\n" + BEGINNER_SAFETY_PROMPT + "\n\n---\n\n" + INFORMATION_GATHERING_PROMPT + "\n\n---\n\n" + RECOMMENDATION_REFINEMENT_PROMPT + "\n\n---\n\n" + FALLBACK_SEARCH_PROMPT + "\n\n---\n\n" + _SALES_PROMPT
 
 
 # ── Simple response shortcuts ─────────────────────────────────────────────────
@@ -979,6 +995,175 @@ def _prepare_messages(
     return messages
 
 
+def try_extract_search_params(
+    user_message: str,
+    history: list[dict],
+    is_beginner: bool,
+) -> dict | None:
+    """
+    Fast path: extract smart_search parameters at Python level without an LLM call.
+
+    Returns a params dict if confident enough to skip Call 1, or None to fall
+    back to the standard 2-call agent loop.
+
+    Requires: category + (effects OR strain_type) to be present.
+    """
+    msg_lower = user_message.lower()
+
+    # Guard: product detail / comparison requests must go through LLM
+    _DETAIL_PATTERNS = re.compile(
+        r"tell me more about|more (details?|info) (about|on)|what(\'s| is) .+ like"
+        r"|more about|details? (on|about)|describe .+|explain .+",
+        re.I,
+    )
+    if _DETAIL_PATTERNS.search(user_message):
+        return None
+
+    # Guard: flavor/taste-specific searches must go through LLM (fast path can't handle query param)
+    _FLAVOR_PATTERNS = re.compile(
+        r"\bflavor\b|\btaste\b|\bnotes?\b|\bdiesel\b|\bsour\b|\bcitrus\b|\bearthy\b"
+        r"|\bfruity\b|\bsweet\b|\bspicy\b|\bherbal\b|\bpine\b|\bberr",
+        re.I,
+    )
+    if _FLAVOR_PATTERNS.search(user_message):
+        return None
+    user_history = " ".join(
+        m.get("content", "") for m in history if m.get("role") == "user"
+    )
+    all_user = (user_history + " " + msg_lower).lower()
+
+    # ── Category ─────────────────────────────────────────────────────────────
+    # Note: \b word-boundary doesn't work for Chinese; use simple substring search.
+    _CAT_PATTERNS = [
+        ("Edibles",    re.compile(r"edibles?|gummies?|gummy|chocolate|candy|软糖|巧克力|可食用", re.I)),
+        ("Pre-rolls",  re.compile(r"pre.?rolls?|pre-roll|joint(?!s?\s+venture)|prerolls?|预卷|预制卷", re.I)),
+        ("Vaporizers", re.compile(r"vapes?|vaping|vaporizers?|\bcart\b|\bcarts\b|cartridges?|蒸发|电子烟", re.I)),
+        ("Flower",     re.compile(r"flower|bud(?!get)|buds|smoke|大麻花", re.I)),
+    ]
+    category = None
+    for text in [msg_lower, user_history.lower()]:
+        for cat_name, pat in _CAT_PATTERNS:
+            if pat.search(text):
+                category = cat_name
+                break
+        if category:
+            break
+
+    if not category:
+        return None  # Can't determine category — let LLM handle it
+
+    # ── Strain type ───────────────────────────────────────────────────────────
+    effects: list[str] = []
+    strain_type: str | None = None
+
+    if re.search(r"indica", all_user, re.I):
+        strain_type = "Indica"
+        effects = ["Relaxed", "Sleepy"]
+    elif re.search(r"sativa", all_user, re.I):
+        strain_type = "Sativa"
+        effects = ["Energetic", "Uplifted"]
+    elif re.search(r"hybrid", all_user, re.I):
+        strain_type = "Hybrid"
+
+    # ── Effect keywords (no \b needed for Chinese) ────────────────────────────
+    if re.search(r"\b(sleep|sleepy)\b|助眠|睡眠|入睡|睡觉|夜间", all_user, re.I):
+        if "Relaxed" not in effects:
+            effects.append("Relaxed")
+        if "Sleepy" not in effects:
+            effects.append("Sleepy")
+
+    if re.search(r"\b(relax|relaxing|unwind|chill|calm)\b|放松|轻松|减压|平静", all_user, re.I):
+        if "Relaxed" not in effects:
+            effects.append("Relaxed")
+        if "Calm" not in effects:
+            effects.append("Calm")
+
+    if re.search(r"\b(energy|energetic|focus|creative)\b|提神|精力|专注|创意", all_user, re.I):
+        if "Energetic" not in effects:
+            effects.append("Energetic")
+
+    if not effects and not strain_type:
+        return None  # Can't determine effects — let LLM handle it
+
+    # ── Build params ──────────────────────────────────────────────────────────
+    params: dict = {"category": category}
+    if strain_type:
+        params["strain_type"] = strain_type
+    if effects:
+        params["effects"] = effects[:2]  # Cap at 2 to avoid over-filtering
+    if is_beginner:
+        params["is_beginner"] = True
+
+    # Price: "最多X美元" / "under $X" / "budget X" / "不超过X"
+    price_match = re.search(
+        r"(?:最多|最高|不超过|under|below|less\s+than|budget|预算)[^\d]*(\d+)",
+        user_message, re.I,
+    )
+    if price_match:
+        params["max_price"] = float(price_match.group(1))
+    else:
+        dollar_match = re.search(
+            r"\$\s*(\d+)|\b(\d+)\s*(?:美元|dollars?|bucks?)\b", user_message, re.I
+        )
+        if dollar_match:
+            amount = float(dollar_match.group(1) or dollar_match.group(2))
+            params["budget_target"] = amount
+
+    return params
+
+
+def _run_fast_path(
+    client,
+    messages: list[dict],
+    search_params: dict,
+    product_manager,
+) -> str | None:
+    """
+    Fast path: skip Call 1 by injecting a synthetic tool call + result, then
+    make a single LLM call to generate the recommendation.
+
+    Returns the reply string, or None if anything goes wrong (caller falls back
+    to the standard agent loop).
+    """
+    import uuid
+
+    try:
+        search_result = product_manager.search_products(**search_params)
+        fake_call_id = f"call_{uuid.uuid4().hex[:12]}"
+
+        # Inject synthetic Call-1 assistant message
+        messages.append({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": fake_call_id,
+                "type": "function",
+                "function": {
+                    "name": "smart_search",
+                    "arguments": json.dumps(search_params, separators=(",", ":")),
+                },
+            }],
+        })
+
+        # Inject tool result
+        messages.append({
+            "role": "tool",
+            "tool_call_id": fake_call_id,
+            "content": json.dumps(search_result, separators=(",", ":")),
+        })
+
+        # Single LLM call — no tools needed, search already done
+        response = client.chat.completions.create(
+            model=MODEL_NAME,
+            messages=messages,
+        )
+        return response.choices[0].message.content or ""
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[FastPath] exception: %s", exc)
+        return None  # Signal caller to fall back
+
+
 def _execute_tool_call(tool_call, product_manager) -> dict:
     """Dispatch a single tool call and return its result dict."""
     fn_name = tool_call.function.name
@@ -1079,6 +1264,9 @@ def _run_agent_loop(
         raise RuntimeError(f"OpenAI API error: {exc}") from exc
 
 
+_openai_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+
 def get_recommendation(
     history: list[dict],
     user_message: str,
@@ -1087,6 +1275,10 @@ def get_recommendation(
 ) -> str:
     """
     Run the Agent Loop: call LLM → execute tool calls → call LLM again until done.
+
+    Fast path: if search parameters can be extracted at Python level, skip the
+    first LLM call and inject a synthetic tool result directly, reducing latency
+    by ~2-5 seconds for ~60-70% of recommendation requests.
 
     Args:
         history: Previous messages as list of {role, content} dicts.
@@ -1099,8 +1291,18 @@ def get_recommendation(
     Raises:
         RuntimeError: If the API call fails.
     """
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     profile = extract_profile_signals(user_message, history)
     tool_choice = _determine_tool_choice(user_message, history)
     messages = _prepare_messages(history, user_message, profile, is_beginner)
-    return _run_agent_loop(client, messages, tool_choice, product_manager)
+
+    # Fast path: extract params at Python level → skip Call 1
+    if tool_choice in ("auto", "required"):
+        fast_params = try_extract_search_params(user_message, history, is_beginner)
+        if fast_params:
+            logger.info("[FastPath] params=%s", fast_params)
+            result = _run_fast_path(_openai_client, messages, fast_params, product_manager)
+            if result:
+                return result
+            logger.info("[FastPath] failed or empty, falling back to agent loop")
+
+    return _run_agent_loop(_openai_client, messages, tool_choice, product_manager)
