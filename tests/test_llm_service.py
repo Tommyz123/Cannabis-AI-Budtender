@@ -171,12 +171,10 @@ def test_get_recommendation_success():
     mock_response.choices = [mock_choice]
 
     mock_pm = MagicMock()
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
 
-    with patch("backend.llm_service.openai.OpenAI") as mock_openai_class:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
-        mock_openai_class.return_value = mock_client
-
+    with patch("backend.llm_service._openai_client", mock_client):
         result = get_recommendation([], "Help me relax", mock_pm)
 
     assert result == "I recommend Blue Dream for relaxation."
@@ -185,14 +183,12 @@ def test_get_recommendation_success():
 def test_get_recommendation_error():
     """Verify API timeout raises RuntimeError with descriptive message."""
     mock_pm = MagicMock()
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = openai.APITimeoutError(
+        request=MagicMock()
+    )
 
-    with patch("backend.llm_service.openai.OpenAI") as mock_openai_class:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = openai.APITimeoutError(
-            request=MagicMock()
-        )
-        mock_openai_class.return_value = mock_client
-
+    with patch("backend.llm_service._openai_client", mock_client):
         with pytest.raises(RuntimeError, match="timed out"):
             get_recommendation([], "Hello", mock_pm)
 
@@ -223,12 +219,14 @@ def test_get_recommendation_tool_call():
     mock_pm = MagicMock()
     mock_pm.search_products.return_value = {"products": [], "total": 0}
 
-    with patch("backend.llm_service.openai.OpenAI") as mock_openai_class:
-        mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = [mock_resp1, mock_resp2]
-        mock_openai_class.return_value = mock_client
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.side_effect = [mock_resp1, mock_resp2]
 
+    with patch("backend.llm_service._openai_client", mock_client):
         result = get_recommendation([], "I want a flower for sleep", mock_pm)
 
     assert result == "Here is a Flower recommendation!"
-    mock_pm.search_products.assert_called_once_with(category="Flower")
+    # Fast path extracts effects from "sleep" keyword in addition to category
+    mock_pm.search_products.assert_called_once_with(
+        category="Flower", effects=["Relaxed", "Sleepy"]
+    )
