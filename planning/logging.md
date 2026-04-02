@@ -3,6 +3,20 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-02] 修复 | 新手单轮 gentle/sleep-friendly 请求改为 beginner-ready 直搜
+
+- **变更内容**：
+  - `backend/router.py`：新增 `is_beginner_ready_query(user_message, history)`，识别“新手 + 无 form + gentle/sleep-friendly 首次体验诉求”的直搜场景；`determine_tool_choice()` 对该类请求直接返回 `required`
+  - `backend/router.py`：`try_extract_search_params()` 新增 beginner-ready fast-path，默认 `category='Edibles'`，并按语义补齐 `effects=['Relaxed']` 或 `['Relaxed', 'Sleepy']`
+  - `backend/prompts.py`：新增独立模块 `BEGINNER_READY_SEARCH_PROMPT`，禁止该类请求停在 `Just a moment` / `I'll look for...` 之类的过渡话术，并注入 `SYSTEM_PROMPT`
+  - `golden_dataset_v2.json`：新增 `tc_G11`，覆盖“新手 + 无 form + gentle/sleep-friendly → 立即搜索”的代表 case；已确认与现有 `tc_C3`（新手 + gummies 已知 form）不重复
+  - `tests/test_llm_service.py`：补充 beginner-ready 的 prompt、tool_choice、fast-path 单测
+- **涉及文件**：`backend/router.py`、`backend/prompts.py`、`golden_dataset_v2.json`、`tests/test_llm_service.py`、`planning/context.md`
+- **测试结果**：
+  - `venv/bin/python -m pytest tests/test_llm_service.py -q` → 通过
+  - `venv/bin/python -m pytest tests/ -q` → 通过
+  - `venv/bin/python eval/run_eval.py --tc tc_G11` → 通过
+
 ## [2026-04-01] 重构 | llm_service.py 分层拆解
 
 - **变更内容**：将 `backend/llm_service.py`（原 ~1300 行）拆分为 4 个职责独立的模块

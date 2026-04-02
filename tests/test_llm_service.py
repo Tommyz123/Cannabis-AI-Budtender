@@ -35,6 +35,7 @@ def test_build_system_prompt_contains_mappings():
     assert "hiking" in SYSTEM_PROMPT
     assert "party" in SYSTEM_PROMPT
     assert "OCCASION-READY DIRECT SEARCH" in SYSTEM_PROMPT
+    assert "BEGINNER-READY DIRECT SEARCH" in SYSTEM_PROMPT
     # New prompt handles beginner internally, no hidden marker needed
     assert "beginner" in SYSTEM_PROMPT.lower()
 
@@ -198,6 +199,22 @@ def test_determine_tool_choice_requires_search_for_occasion_ready_query():
         assert determine_tool_choice(message, []) == "required"
 
 
+def test_determine_tool_choice_requires_search_for_beginner_ready_query():
+    """Verify beginner-safe no-form requests force immediate search."""
+    messages = [
+        (
+            "I have never tried weed before and I am nervous about getting way too high. "
+            "I want something super gentle for a quiet night at home."
+        ),
+        (
+            "My friends keep suggesting cannabis but I am still unsure. "
+            "If I wanted a gentle sleep-friendly first experience, what would you point me to?"
+        ),
+    ]
+    for message in messages:
+        assert determine_tool_choice(message, []) == "required"
+
+
 def test_is_price_refinement_query_after_recommendations():
     """Verify cheaper follow-up after concrete recs is treated as refinement."""
     history = [
@@ -332,4 +349,34 @@ def test_get_recommendation_price_refinement_uses_lower_price_cap():
         category="Flower",
         effects=["Energetic", "Uplifted"],
         max_price=31.99,
+    )
+
+
+def test_get_recommendation_beginner_ready_defaults_to_edibles():
+    """Verify beginner no-form gentle requests search beginner-safe edibles directly."""
+    mock_choice = MagicMock()
+    mock_choice.message.content = "Here are some gentle beginner-friendly edibles."
+    mock_choice.message.tool_calls = None
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    mock_pm = MagicMock()
+    mock_pm.search_products.return_value = {"products": [], "total": 0}
+    mock_client = MagicMock()
+    mock_client.chat.completions.create.return_value = mock_response
+
+    with patch("backend.llm_service._openai_client", mock_client):
+        result = get_recommendation(
+            [],
+            "My friends keep suggesting cannabis but I am still unsure. "
+            "If I wanted a gentle sleep-friendly first experience, what would you point me to?",
+            mock_pm,
+            is_beginner=True,
+        )
+
+    assert result == "Here are some gentle beginner-friendly edibles."
+    mock_pm.search_products.assert_called_once_with(
+        category="Edibles",
+        effects=["Relaxed", "Sleepy"],
+        is_beginner=True,
     )

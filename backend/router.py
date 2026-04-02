@@ -272,6 +272,36 @@ def is_occasion_ready_query(user_message: str, history: list[dict]) -> bool:
     return (has_effect or has_social_vibe) and has_guardrail
 
 
+def is_beginner_ready_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when a beginner provides enough gentle/sleep intent to default
+    safely to beginner edibles even if product form is still unknown.
+    """
+    user_history = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    )
+    all_user_text = f"{user_history} {user_message}".strip()
+
+    if not _BEGINNER_SIGNALS.search(all_user_text):
+        return False
+    if has_form_keyword(all_user_text):
+        return False
+
+    has_relax_intent = bool(
+        re.search(r"\b(relax|relaxing|calm|gentle|mild|light|easy|quiet|soft)\b", all_user_text, re.I)
+    )
+    has_sleep_intent = bool(re.search(r"\b(sleep|sleepy|bed|night)\b", all_user_text, re.I))
+    has_guardrail = bool(
+        re.search(
+            r"\b(too high|too strong|nothing intense|not intense|not too intense|"
+            r"mildest|way too high|overwhelm|overwhelming)\b",
+            all_user_text,
+            re.I,
+        )
+    )
+    return has_sleep_intent or (has_relax_intent and has_guardrail)
+
+
 def has_form_keyword(text: str) -> bool:
     """Return True if text contains a product form keyword (flower, edibles, vape, etc.)."""
     return bool(_FORM_KEYWORDS.search(text))
@@ -285,6 +315,8 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_vague_query(user_message):
         return "none"
+    if is_beginner_ready_query(user_message, history):
+        return "required"
     if is_occasion_ready_query(user_message, history):
         return "required"
     if is_form_unknown_query(user_message, history):
@@ -480,6 +512,7 @@ def try_extract_search_params(
         m.get("content", "") for m in history if m.get("role") == "user"
     )
     all_user = (user_history + " " + msg_lower).lower()
+    beginner_ready = is_beginner and is_beginner_ready_query(user_message, history)
 
     # ── Category ─────────────────────────────────────────────────────────────
     _CAT_PATTERNS = [
@@ -498,7 +531,10 @@ def try_extract_search_params(
             break
 
     if not category:
-        return None
+        if beginner_ready:
+            category = "Edibles"
+        else:
+            return None
 
     # ── Strain type ───────────────────────────────────────────────────────────
     effects: list[str] = []
@@ -535,6 +571,12 @@ def try_extract_search_params(
             effects.append("Energetic")
         if re.search(r"\buplift(?:ed|ing)?|happy\b", all_user, re.I) and "Uplifted" not in effects:
             effects.append("Uplifted")
+
+    if beginner_ready and not effects and not strain_type:
+        if re.search(r"\b(sleep|sleepy|bed|night)\b", all_user, re.I):
+            effects = ["Relaxed", "Sleepy"]
+        else:
+            effects = ["Relaxed"]
 
     if not effects and not strain_type:
         return None

@@ -76,6 +76,27 @@ When a customer indicates they are new to cannabis (e.g. "I've never tried", "fi
    - ✅ Correct flow: say "Since you're new, I'll find some gentler, lower-THC flower for you — start low, go slow!" then immediately call smart_search(category='Flower', effects=['Relaxed'])
    - ❌ "Are you looking for something relaxing?" — NEVER ask for effects from a beginner who has already given you the form"""
 
+BEGINNER_READY_SEARCH_PROMPT = """## BEGINNER-READY DIRECT SEARCH
+
+If a beginner customer does NOT specify a product form, but their request already makes the safe direction obvious, treat that as enough information to search immediately.
+
+Trigger pattern:
+- Clear beginner signal is present ("first time", "never tried", "new to this", "beginner")
+- AND no product form is specified
+- AND the request clearly points to a gentle beginner-safe direction:
+  - sleep-friendly / bedtime / nighttime first experience
+  - OR gentle / mild / light / calm + explicit concern about getting too high or overwhelmed
+
+When this trigger pattern is present:
+- Your ONLY valid action is to call `smart_search` immediately
+- Default to `category='Edibles'`
+- Default to `effects=['Relaxed']`, or `effects=['Relaxed', 'Sleepy']` when sleep intent is explicit
+- Include beginner-safe guidance in the final reply such as "start low, go slow"
+- Do NOT output any text before the tool call
+- Do NOT ask flower / edibles / vape first
+- Do NOT say "Just a moment", "I'll look for something", or any other transition text before the tool call
+"""
+
 # ── Information gathering module ──────────────────────────────────────────────
 
 INFORMATION_GATHERING_PROMPT = """## INFORMATION GATHERING (required before any recommendation)
@@ -479,6 +500,8 @@ SYSTEM_PROMPT = (
     + NON_CONSENSUAL_USE_PROMPT
     + "\n\n---\n\n"
     + BEGINNER_SAFETY_PROMPT
+    + "\n\n---\n\n"
+    + BEGINNER_READY_SEARCH_PROMPT
     + "\n\n---\n\n"
     + INFORMATION_GATHERING_PROMPT
     + "\n\n---\n\n"

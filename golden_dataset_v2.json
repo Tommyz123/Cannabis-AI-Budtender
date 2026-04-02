@@ -10,7 +10,7 @@
                        "G - Information Gathering Layer",
                        "B - Recommendation Refinement"
                    ],
-    "total_cases":  23,
+    "total_cases":  24,
     "test_cases":  [
                        {
                            "id":  "tc_C1",
@@ -754,13 +754,45 @@
                                                   "AI 推荐方向偏向身体放松与恢复，同时避免过度昏沉或过重镇静的描述",
                                                   "AI 没有直接拒绝帮助或终止对话"
                                               ],
+                            "tags":  [
+                                         "gathering",
+                                         "occasion-driven",
+                                         "recovery",
+                                         "mentally-clear",
+                                         "no-form",
+                                         "search-immediately"
+                                     ]
+                       },
+                       {
+                           "id":  "tc_G11",
+                           "scenario":  "information_gathering",
+                           "difficulty":  "medium",
+                           "priority":  "P1",
+                           "description":  "新手顾客未指定 form，但已明确表达 gentle/sleep-friendly 的首次体验诉求 → AI 应直接调用 smart_search，默认 beginner-safe edible 方向，不得停在 Just a moment 之类的过渡话术",
+                           "input":  {
+                                         "user_message":  "My friends keep suggesting cannabis but I am still unsure. If I wanted a gentle sleep-friendly first experience, what would you point me to?",
+                                         "conversation_history":  [
+
+                                                                  ]
+                                     },
+                           "expected_behavior":  {
+                                                     "tool_should_be_called":  "smart_search",
+                                                     "tool_choice_should_be":  "auto",
+                                                     "note":  "顾客已提供 beginner 信号 + gentle/sleep-friendly 意图，且未指定 form。AI 应直接调用 smart_search，默认 beginner-safe edible 方向（如 category='Edibles' 且 is_beginner=true），不得先输出 'Just a moment' / 'I'll find something' 之类的过渡文案。"
+                                                 },
+                           "judge_criteria":  [
+                                                  "AI 调用了 smart_search（该场景已具备 beginner-ready 直搜条件，应立即搜索）",
+                                                  "smart_search 参数包含 Edibles 相关 category（如 category='Edibles'）",
+                                                  "smart_search 参数包含 is_beginner=true",
+                                                  "AI 没有在搜索前输出过渡承诺文案（如 'Just a moment' / 'I\\'ll find' / 'Let me look for' 等）"
+                                              ],
                            "tags":  [
                                         "gathering",
-                                        "occasion-driven",
-                                        "recovery",
-                                        "mentally-clear",
+                                        "beginner",
                                         "no-form",
-                                        "search-immediately"
+                                        "sleep-friendly",
+                                        "search-immediately",
+                                        "no-commit-text"
                                     ]
                        },
                        {
