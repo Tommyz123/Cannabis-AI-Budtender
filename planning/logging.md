@@ -599,3 +599,32 @@
 **测试结果：**
 - `venv/bin/python eval/run_eval.py --tc tc_G10` → 1/1 通过
 - `venv/bin/python eval/run_eval.py` → 黄金数据集 23/23 通过（100%）
+
+## [2026-04-02] 修复 | 价格类追问直接承接已有推荐并补充软性预算引导
+
+**变更内容：**
+- `backend/router.py`：新增 `is_price_refinement_query(user_message, history)` 与 `derive_cheaper_price_cap(history)`，把“已有具体推荐后再说 cheaper/pricey”从普通价格澄清中分离出来
+- `backend/router.py`：`determine_tool_choice()` 对上述价格 refinement 直接返回 `required`，不再退回只问预算
+- `backend/router.py`：`try_extract_search_params()` 支持继承历史 `category/effects`，并在 cheaper follow-up 时自动带入低于上一轮最便宜推荐的 `max_price`
+- `backend/prompts.py`：调整 `RECOMMENDATION_REFINEMENT_PROMPT` 的 Price Feedback 规则，改为“先给更便宜替代，再补一句可提供 price range 以便进一步收窄”
+- `backend/llm_service.py`：新增 price refinement 的即时注入文案，禁止主回复再次只问 `What price range works for you?`
+- `tests/test_llm_service.py`：补充价格 refinement 识别、tool_choice 路由、以及 cheaper follow-up fast-path 参数测试
+
+**涉及文件：** `backend/router.py`、`backend/prompts.py`、`backend/llm_service.py`、`tests/test_llm_service.py`、`planning/context.md`
+
+**测试结果：**
+- `venv/bin/python -m pytest tests/test_llm_service.py -v` → 通过
+- `venv/bin/python -m pytest tests/ -v` → 通过
+
+## [2026-04-02] 修复 | 复用并更新 tc_B1 覆盖价格类 cheaper follow-up，避免黄金数据集重复
+
+**变更内容：**
+- `golden_dataset_v2.json`：确认数据集中已存在同类 case `tc_B1`，未新增重复 case
+- `golden_dataset_v2.json`：将 `tc_B1` 的期望从“先问预算、不重搜”更新为“直接给更便宜替代，并可软性邀请补充 price range”
+- 保持黄金集总数不变，仍为 23 条，仅修正该 case 的期望行为与标签
+
+**涉及文件：** `golden_dataset_v2.json`
+
+**测试结果：**
+- `venv/bin/python eval/run_eval.py --tc tc_B1` → 1/1 通过
+- `venv/bin/python eval/run_eval.py` → 23/23 通过（100%）

@@ -129,7 +129,10 @@ RECOMMENDATION_REFINEMENT_PROMPT = """## RECOMMENDATION REFINEMENT
 
 ### Post-Recommendation Feedback
 
-**HARD GATE — Price Feedback**: If customer says "too expensive" / "cheaper" / "more affordable" / "something cheaper" and no explicit price range or number has been mentioned → ask ONE question: "What price range works for you?" and STOP. Do NOT call smart_search until a price range is known.
+**Price Feedback**:
+- If customer says "too expensive" / "cheaper" / "more affordable" / "something cheaper" BEFORE you have recommended any concrete products and no explicit price range or number has been mentioned → ask ONE question: "What price range works for you?" and STOP.
+- If customer says "too expensive" / "cheaper" / "more affordable" / "something cheaper" AFTER you have already recommended concrete products → do NOT stop to ask budget first. Re-search immediately for lower-priced options while preserving the same vibe, effect direction, and form whenever possible.
+- After giving the cheaper alternatives, add ONE soft closing line that invites a tighter budget without blocking the recommendation. Example: "If you have a price range in mind, let me know and I can narrow it down even better."
 
 **HARD GATE — Generic Rejection**: If customer says "I don't like any of these" / "none of these" / "not what I'm looking for" / "not really my thing" and has NOT specified why → ask ONE clarifying question: "What specifically didn't work for you — the price, the effects, the flavor, or the product type?" and STOP. Do NOT call smart_search until you know the reason.
 

@@ -109,6 +109,7 @@ _PRICE_FEEDBACK_KEYWORDS = re.compile(
 )
 
 _PRICE_NUMBER = re.compile(r"\$\s*\d+|\d+\s*dollars?|\d+\s*bucks?", re.IGNORECASE)
+_ASSISTANT_PRICE_LINE = re.compile(r"Price:\s*\$(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 _GENERIC_REJECTION_PATTERNS = re.compile(
     r"\b(don'?t (really |particularly )?(like|want|need) any( of these)?|"
@@ -167,6 +168,38 @@ def is_price_feedback_query(user_message: str) -> bool:
     if _PRICE_NUMBER.search(user_message):
         return False
     return True
+
+
+def _extract_previous_recommendation_prices(history: list[dict]) -> list[float]:
+    """Return previously recommended prices parsed from assistant messages."""
+    prices: list[float] = []
+    for msg in history:
+        if msg.get("role") != "assistant":
+            continue
+        for price in _ASSISTANT_PRICE_LINE.findall(msg.get("content", "")):
+            prices.append(float(price))
+    return prices
+
+
+def is_price_refinement_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when the user asks for something cheaper after concrete products
+    were already recommended in the conversation.
+    """
+    if not is_price_feedback_query(user_message):
+        return False
+    return bool(_extract_previous_recommendation_prices(history))
+
+
+def derive_cheaper_price_cap(history: list[dict]) -> float | None:
+    """Derive a strict cap just below the cheapest previously recommended item."""
+    previous_prices = _extract_previous_recommendation_prices(history)
+    if not previous_prices:
+        return None
+    cheapest = min(previous_prices)
+    if cheapest <= 1:
+        return None
+    return round(cheapest - 0.01, 2)
 
 
 def is_generic_rejection_query(user_message: str) -> bool:
@@ -258,6 +291,8 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_vape_hardware_unknown_query(user_message, history):
         return "none"
+    if is_price_refinement_query(user_message, history):
+        return "required"
     if is_price_feedback_query(user_message):
         return "none"
     if is_generic_rejection_query(user_message):
@@ -491,9 +526,15 @@ def try_extract_search_params(
         if "Calm" not in effects:
             effects.append("Calm")
 
-    if re.search(r"\b(energy|energetic|focus|creative)\b|提神|精力|专注|创意", all_user, re.I):
+    if re.search(
+        r"\b(energy|energetic|focus|creative|uplift(?:ed|ing)?|happy|draw(?:ing)?|art)\b|提神|精力|专注|创意",
+        all_user,
+        re.I,
+    ):
         if "Energetic" not in effects:
             effects.append("Energetic")
+        if re.search(r"\buplift(?:ed|ing)?|happy\b", all_user, re.I) and "Uplifted" not in effects:
+            effects.append("Uplifted")
 
     if not effects and not strain_type:
         return None
@@ -520,5 +561,10 @@ def try_extract_search_params(
         if dollar_match:
             amount = float(dollar_match.group(1) or dollar_match.group(2))
             params["budget_target"] = amount
+
+    if "max_price" not in params and "budget_target" not in params:
+        cheaper_cap = derive_cheaper_price_cap(history)
+        if cheaper_cap is not None and is_price_refinement_query(user_message, history):
+            params["max_price"] = cheaper_cap
 
     return params
