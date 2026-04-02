@@ -59,6 +59,11 @@ _EFFECT_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_SOCIAL_VIBE_KEYWORDS = re.compile(
+    r"\b(smiley|connected|connection|giggly|laugh|laughing|social|sociable|romantic|intimate)\b",
+    re.IGNORECASE,
+)
+
 _STRAIN_TYPES = re.compile(r"\b(indica|sativa|hybrid)\b", re.IGNORECASE)
 
 _VAPE_FORM_KEYWORDS = re.compile(
@@ -87,6 +92,7 @@ _PRODUCT_COMPARISON_PATTERNS = re.compile(
 _NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
     r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
     r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
+    r"\bnot\s+knocked\s+out\b|"
     r"\bnothing\s+too\s+(heavy|intense|strong)\b|"
     r"\b(without|no)\s+(a\s+)?hangover\b|"
     r"\b(do\s*n'?t|do\s+not)\s+want\s+(a\s+)?hangover\b|"
@@ -207,6 +213,29 @@ def is_negative_strength_constraint(message: str) -> bool:
     return bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(message))
 
 
+def is_occasion_ready_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when occasion + vibe/effect signals are complete enough to search
+    even if the customer has not specified a product form yet.
+    """
+    if has_form_keyword(user_message):
+        return False
+
+    user_history = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    )
+    all_user_text = f"{user_history} {user_message}".strip()
+    if not _OCCASION_SIGNALS.search(all_user_text):
+        return False
+
+    has_effect = bool(_EFFECT_KEYWORDS.search(all_user_text)) or bool(
+        _STRAIN_TYPES.search(all_user_text)
+    )
+    has_social_vibe = bool(_SOCIAL_VIBE_KEYWORDS.search(all_user_text))
+    has_guardrail = bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(all_user_text))
+    return (has_effect or has_social_vibe) and has_guardrail
+
+
 def has_form_keyword(text: str) -> bool:
     """Return True if text contains a product form keyword (flower, edibles, vape, etc.)."""
     return bool(_FORM_KEYWORDS.search(text))
@@ -220,6 +249,8 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_vague_query(user_message):
         return "none"
+    if is_occasion_ready_query(user_message, history):
+        return "required"
     if is_form_unknown_query(user_message, history):
         return "none"
     if is_vape_hardware_unknown_query(user_message, history):

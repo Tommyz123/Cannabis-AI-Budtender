@@ -5,7 +5,14 @@ import pytest
 import openai
 from backend.llm_service import build_messages, get_recommendation
 from backend.prompts import SYSTEM_PROMPT
-from backend.router import get_simple_response, is_medical_query, is_vague_query, is_form_unknown_query
+from backend.router import (
+    get_simple_response,
+    is_medical_query,
+    is_vague_query,
+    is_form_unknown_query,
+    is_occasion_ready_query,
+    determine_tool_choice,
+)
 from backend.tool_executor import TOOLS_SCHEMA
 
 
@@ -26,6 +33,7 @@ def test_build_system_prompt_contains_mappings():
     assert "relax" in SYSTEM_PROMPT
     assert "hiking" in SYSTEM_PROMPT
     assert "party" in SYSTEM_PROMPT
+    assert "OCCASION-READY DIRECT SEARCH" in SYSTEM_PROMPT
     # New prompt handles beginner internally, no hidden marker needed
     assert "beginner" in SYSTEM_PROMPT.lower()
 
@@ -142,6 +150,29 @@ def test_is_form_unknown_query_form_in_history():
     """Verify form in history suppresses flag."""
     history = [{"role": "user", "content": "I prefer edibles"}]
     assert not is_form_unknown_query("I want to relax", history)
+
+
+def test_is_occasion_ready_query():
+    """Verify occasion-led requests with a clear guardrail are treated as search-ready."""
+    message = (
+        "I want something for a date night where we feel relaxed, smiley, "
+        "and connected, not knocked out."
+    )
+    assert is_occasion_ready_query(message, [])
+
+
+def test_determine_tool_choice_keeps_plain_effect_query_on_none():
+    """Verify standard effect-only discovery queries still ask for form first."""
+    assert determine_tool_choice("I want to relax", []) == "none"
+
+
+def test_determine_tool_choice_requires_search_for_occasion_ready_query():
+    """Verify complete occasion-led requests force an immediate tool call."""
+    message = (
+        "I want something for a date night where we feel relaxed, smiley, "
+        "and connected, not knocked out."
+    )
+    assert determine_tool_choice(message, []) == "required"
 
 
 # ── Tools schema test ─────────────────────────────────────────────────────────

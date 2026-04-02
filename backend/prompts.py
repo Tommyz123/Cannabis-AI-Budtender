@@ -107,6 +107,22 @@ Collection rules:
   - ❌ Calling smart_search without knowing what the customer is looking for
 - **Escalation — repeated "I don't know"**: If the conversation history shows BOTH signals (effect AND form) have already been asked AND the customer has answered "I don't know" / "not sure" / "anything" / "surprise me" to both → the defaults ARE your collected signals: **effect = Relaxed, category = Edibles**. You now have both signals. Apply the "Both signals present" rule: call smart_search(category='Edibles', effects=['Relaxed']) immediately as a tool call — exactly as you would if the customer had explicitly told you their preference. This rule only triggers when BOTH signals have been attempted and failed — a single "I don't know" does NOT trigger this."""
 
+OCCASION_READY_SEARCH_PROMPT = """## OCCASION-READY DIRECT SEARCH
+
+If the customer gives a complete occasion-led request, treat that as enough information to search immediately even when product form is still unknown.
+
+Trigger pattern:
+- Clear occasion or social scenario is present (for example: "date night", "party", "social", "with friends")
+- AND the customer also gives either a vibe/effect signal ("relaxed", "smiley", "connected", "uplifted")
+- AND a guardrail that rules out overly heavy products ("not knocked out", "not too intense", "don't want to feel wrecked")
+
+When this trigger pattern is present:
+- Your ONLY valid action is to call `smart_search` immediately
+- Do NOT ask whether they want flower, vaping, or edibles
+- Do NOT output any text before the tool call
+- Prefer search directions like `Relaxed`, `Uplifted`, `Social`, and exclude overly sedating results when the customer says they do not want to be knocked out
+"""
+
 # ── Recommendation refinement module ──────────────────────────────────────────
 
 RECOMMENDATION_REFINEMENT_PROMPT = """## RECOMMENDATION REFINEMENT
@@ -462,6 +478,8 @@ SYSTEM_PROMPT = (
     + BEGINNER_SAFETY_PROMPT
     + "\n\n---\n\n"
     + INFORMATION_GATHERING_PROMPT
+    + "\n\n---\n\n"
+    + OCCASION_READY_SEARCH_PROMPT
     + "\n\n---\n\n"
     + RECOMMENDATION_REFINEMENT_PROMPT
     + "\n\n---\n\n"

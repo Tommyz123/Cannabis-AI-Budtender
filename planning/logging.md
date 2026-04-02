@@ -556,3 +556,19 @@
 - 变更内容：eval/run_eval.py 改用 DB_PATH 加载产品；context.md 全面更新反映 SQLite 新架构
 - 涉及文件：eval/run_eval.py, planning/context.md
 - 测试结果：全量 Eval 21/21 通过（100%）
+## [2026-04-02] 修复 | tc_G9 date night 场景改为直接搜索
+
+**变更内容：**
+- `backend/router.py`：新增 `is_occasion_ready_query(user_message, history)`，仅在“occasion 场景 + vibe/effect + negative guardrail 已完整、且 form 未知”时判定为可直接搜索
+- `backend/router.py`：`determine_tool_choice()` 对上述请求返回 `required`，避免 LLM 在 `auto` 下继续追问 `flower / vaping / edibles`
+- `backend/router.py`：补充负面强度约束词形 `not knocked out`
+- `backend/prompts.py`：新增独立模块 `OCCASION_READY_SEARCH_PROMPT`，并注入 `SYSTEM_PROMPT`
+- `backend/llm_service.py`：移除 occasion-ready 的临时长文案注入，保留代码控制流，让该规则回到 prompt 模块维护
+- `tests/test_llm_service.py`：新增 `is_occasion_ready_query()` 与 `determine_tool_choice()` 单测，锁定 tc_G9 行为且避免误伤普通 effect-only 收集请求
+
+**涉及文件：** `backend/router.py`、`backend/prompts.py`、`backend/llm_service.py`、`tests/test_llm_service.py`、`planning/context.md`
+
+**测试结果：**
+- `venv/bin/python -m pytest tests/test_llm_service.py -v` → 23/23 通过
+- `venv/bin/python eval/run_eval.py --tc tc_G9` → 1/1 通过
+- `venv/bin/python eval/run_eval.py` → 黄金数据集 22/22 通过（100%）
