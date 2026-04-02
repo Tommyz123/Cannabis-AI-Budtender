@@ -33,7 +33,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 import openai
 
 from backend.product_manager import ProductManager
-from backend.llm_service import get_recommendation, get_simple_response
+from backend.llm_service import get_recommendation
+from backend.router import get_simple_response
 
 # ── 日志 ──────────────────────────────────────────────────────────────────────
 logging.basicConfig(

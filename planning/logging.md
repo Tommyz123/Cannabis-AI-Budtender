@@ -3,6 +3,29 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-01] 重构 | llm_service.py 分层拆解
+
+- **变更内容**：将 `backend/llm_service.py`（原 ~1300 行）拆分为 4 个职责独立的模块
+  - `backend/prompts.py`：所有 Prompt 模块变量 + `SYSTEM_PROMPT` 组装
+  - `backend/tool_executor.py`：`TOOLS_SCHEMA` + `execute_tool_call`
+  - `backend/router.py`：所有分类器（`is_*_query`）、`determine_tool_choice`、profile 提取、fast-path 参数提取
+  - `backend/llm_service.py`：只保留 Agent Loop 核心（~310 行）
+- **涉及文件**：`backend/llm_service.py`、`backend/prompts.py`（新建）、`backend/tool_executor.py`（新建）、`backend/router.py`（新建）、`backend/main.py`、`tests/test_llm_service.py`
+- **测试结果**：57 个测试全部通过，无回退
+
+## [2026-03-31] 文档 | 新增 Claude Code 可借鉴技术分析文档
+
+**变更内容：**
+- 新增 `planning/claude_code_reference_for_budtender.md`
+- 总结从本地 Claude Code 源码树中可借鉴到 AI Budtender 的技术点
+- 明确区分“值得借鉴”“不建议照搬”“建议的技术方式”“对应样例位置”
+
+**涉及文件：**
+- `planning/claude_code_reference_for_budtender.md`（新建）
+
+**测试结果：**
+- 未运行测试（仅新增文档）
+
 ## [2026-03-26] 修复 | tc_G8 推荐时机偏晚（S3）— 负向约束信号完整时不调工具
 
 - **变更内容**：
