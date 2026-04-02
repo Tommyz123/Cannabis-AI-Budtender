@@ -54,7 +54,7 @@ _FORM_KEYWORDS = re.compile(
 )
 
 _EFFECT_KEYWORDS = re.compile(
-    r"\b(sleep|relax|relaxing|relaxed|calm|calming|energy|energetic|focus|creative|"
+    r"\b(sleep|relax|relaxation|relaxing|relaxed|calm|calming|energy|energetic|focus|creative|"
     r"uplifted|happy|pain|sore|anxiety|stress|stressed|euphoric|sedated|high|stoned|chill|unwind)\b",
     re.IGNORECASE,
 )
@@ -93,6 +93,9 @@ _NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
     r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
     r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
     r"\bnot\s+knocked\s+out\b|"
+    r"\bnot\s+paranoid\b|"
+    r"\bmentally\s+(pretty\s+)?clear\b|"
+    r"\bclear(?:-|\s)?headed\b|"
     r"\bnothing\s+too\s+(heavy|intense|strong)\b|"
     r"\b(without|no)\s+(a\s+)?hangover\b|"
     r"\b(do\s*n'?t|do\s+not)\s+want\s+(a\s+)?hangover\b|"
@@ -281,7 +284,8 @@ _EXPERT_SIGNALS = re.compile(
 )
 _OCCASION_SIGNALS = re.compile(
     r"\b(party|social|with friends|date night|alone|solo|hiking|camping|"
-    r"studying|work|gaming|movie|concert|yoga|gym|outdoor)\b",
+    r"studying|work|gaming|movie|concert|yoga|gym|outdoor|workout|workouts|"
+    r"recovery|recovering|training|post-workout)\b",
     re.IGNORECASE,
 )
 _BUDGET_SIGNALS = re.compile(

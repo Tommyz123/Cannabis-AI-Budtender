@@ -153,12 +153,23 @@ def test_is_form_unknown_query_form_in_history():
 
 
 def test_is_occasion_ready_query():
-    """Verify occasion-led requests with a clear guardrail are treated as search-ready."""
-    message = (
-        "I want something for a date night where we feel relaxed, smiley, "
-        "and connected, not knocked out."
-    )
-    assert is_occasion_ready_query(message, [])
+    """Verify representative occasion-ready requests all count as search-ready."""
+    messages = [
+        (
+            "I want something for a date night where we feel relaxed, smiley, "
+            "and connected, not knocked out."
+        ),
+        (
+            "After hard workouts I want something for recovery and body relaxation, "
+            "but I still want to stay mentally pretty clear."
+        ),
+        (
+            "What would you suggest for a small house party if I want to stay social "
+            "and upbeat but not paranoid?"
+        ),
+    ]
+    for message in messages:
+        assert is_occasion_ready_query(message, [])
 
 
 def test_determine_tool_choice_keeps_plain_effect_query_on_none():
@@ -167,12 +178,23 @@ def test_determine_tool_choice_keeps_plain_effect_query_on_none():
 
 
 def test_determine_tool_choice_requires_search_for_occasion_ready_query():
-    """Verify complete occasion-led requests force an immediate tool call."""
-    message = (
-        "I want something for a date night where we feel relaxed, smiley, "
-        "and connected, not knocked out."
-    )
-    assert determine_tool_choice(message, []) == "required"
+    """Verify representative occasion-ready requests all force immediate search."""
+    messages = [
+        (
+            "I want something for a date night where we feel relaxed, smiley, "
+            "and connected, not knocked out."
+        ),
+        (
+            "After hard workouts I want something for recovery and body relaxation, "
+            "but I still want to stay mentally pretty clear."
+        ),
+        (
+            "What would you suggest for a small house party if I want to stay social "
+            "and upbeat but not paranoid?"
+        ),
+    ]
+    for message in messages:
+        assert determine_tool_choice(message, []) == "required"
 
 
 # ── Tools schema test ─────────────────────────────────────────────────────────

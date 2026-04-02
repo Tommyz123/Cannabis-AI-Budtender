@@ -112,15 +112,15 @@ OCCASION_READY_SEARCH_PROMPT = """## OCCASION-READY DIRECT SEARCH
 If the customer gives a complete occasion-led request, treat that as enough information to search immediately even when product form is still unknown.
 
 Trigger pattern:
-- Clear occasion or social scenario is present (for example: "date night", "party", "social", "with friends")
+- Clear occasion or social scenario is present (for example: "date night", "party", "social", "with friends", "post-workout recovery")
 - AND the customer also gives either a vibe/effect signal ("relaxed", "smiley", "connected", "uplifted")
-- AND a guardrail that rules out overly heavy products ("not knocked out", "not too intense", "don't want to feel wrecked")
+- AND a guardrail that rules out overly heavy or mentally foggy products ("not knocked out", "not too intense", "don't want to feel wrecked", "not paranoid", "mentally clear")
 
 When this trigger pattern is present:
 - Your ONLY valid action is to call `smart_search` immediately
 - Do NOT ask whether they want flower, vaping, or edibles
 - Do NOT output any text before the tool call
-- Prefer search directions like `Relaxed`, `Uplifted`, `Social`, and exclude overly sedating results when the customer says they do not want to be knocked out
+- Prefer search directions like `Relaxed`, `Uplifted`, `Social`, and exclude overly sedating or mentally foggy results when the customer says they do not want to be knocked out, paranoid, or mentally cloudy
 """
 
 # ── Recommendation refinement module ──────────────────────────────────────────

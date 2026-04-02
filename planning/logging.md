@@ -572,3 +572,18 @@
 - `venv/bin/python -m pytest tests/test_llm_service.py -v` → 23/23 通过
 - `venv/bin/python eval/run_eval.py --tc tc_G9` → 1/1 通过
 - `venv/bin/python eval/run_eval.py` → 黄金数据集 22/22 通过（100%）
+
+## [2026-04-02] 修复 | 补齐 occasion-ready 场景识别覆盖恢复与派对场景
+
+**变更内容：**
+- `backend/router.py`：扩展 occasion 场景词，新增 `workout/workouts/recovery/recovering/training/post-workout`
+- `backend/router.py`：扩展负面 guardrail 词，新增 `not paranoid`、`mentally clear`、`clear-headed`
+- `backend/router.py`：补充 `relaxation` effect 词形，使 `body relaxation` 类表达能命中 occasion-ready
+- `backend/prompts.py`：同步扩展 `OCCASION_READY_SEARCH_PROMPT` 示例与 guardrail 描述，覆盖 post-workout recovery 与 not paranoid / mentally clear
+- `tests/test_llm_service.py`：将单点 `date night` 测试提升为这一类 occasion-ready 请求的代表性测试，统一覆盖 date night、post-workout recovery、house party 三种场景
+
+**涉及文件：** `backend/router.py`、`backend/prompts.py`、`tests/test_llm_service.py`
+
+**测试结果：**
+- `venv/bin/python -m pytest tests/test_llm_service.py -v` → 23/23 通过
+- `venv/bin/python -m pytest tests/ -v` → 60/60 通过
