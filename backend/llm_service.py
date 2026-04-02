@@ -13,14 +13,14 @@ from backend.prompts import SYSTEM_PROMPT
 from backend.tool_executor import TOOLS_SCHEMA, execute_tool_call
 from backend.router import (
     is_price_feedback_query,
+    is_vape_flower_alternative,
+    is_product_comparison,
+    is_negative_strength_constraint,
+    has_form_keyword,
     determine_tool_choice,
     extract_profile_signals,
     serialize_profile,
     try_extract_search_params,
-    _VAPE_FLOWER_ALTERNATIVE,
-    _PRODUCT_COMPARISON_PATTERNS,
-    _NEGATIVE_STRENGTH_CONSTRAINT,
-    _FORM_KEYWORDS,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,7 @@ def _prepare_messages(
         )
 
     # Inject action instruction when customer gives "vape or flower" alternatives
-    if _VAPE_FLOWER_ALTERNATIVE.search(user_message):
+    if is_vape_flower_alternative(user_message):
         messages[0]["content"] += (
             "\n\n[IMMEDIATE ACTION REQUIRED]: Customer said 'vape or flower' (or similar). "
             "Per INFORMATION GATHERING rules: 'flower' is the selected form — category='Flower'. "
@@ -102,7 +102,7 @@ def _prepare_messages(
         )
 
     # Inject action instruction for product comparison requests
-    if _PRODUCT_COMPARISON_PATTERNS.search(user_message):
+    if is_product_comparison(user_message):
         messages[0]["content"] += (
             "\n\n[COMPARISON REQUEST DETECTED]: Customer is asking to compare or choose between specific products. "
             "Per RECOMMENDATION REFINEMENT rules: you MUST call smart_search(query='[product A name]', limit=1) "
@@ -113,9 +113,9 @@ def _prepare_messages(
 
     # Inject action instruction when customer gives negative strength constraint + form is known
     all_history_text = " ".join(msg.get("content", "") for msg in history)
-    form_in_message = bool(_FORM_KEYWORDS.search(user_message))
-    form_in_history = bool(_FORM_KEYWORDS.search(all_history_text))
-    if _NEGATIVE_STRENGTH_CONSTRAINT.search(user_message) and (form_in_message or form_in_history):
+    form_in_message = has_form_keyword(user_message)
+    form_in_history = has_form_keyword(all_history_text)
+    if is_negative_strength_constraint(user_message) and (form_in_message or form_in_history):
         messages[0]["content"] += (
             "\n\n[IMMEDIATE ACTION REQUIRED]: Customer expressed a negative outcome constraint (e.g. 'don't want to feel wrecked'). "
             "Per INFORMATION GATHERING rules: this is a complete weak effect signal — infer low-dose/Relaxed. "

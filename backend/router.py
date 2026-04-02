@@ -184,6 +184,28 @@ def is_vape_hardware_unknown_query(user_message: str, history: list[dict]) -> bo
     return True
 
 
+# ── Pattern-check public API (keeps private regex internals encapsulated) ────────
+
+def is_vape_flower_alternative(message: str) -> bool:
+    """Return True if message contains 'vape or flower' (or similar) alternative."""
+    return bool(_VAPE_FLOWER_ALTERNATIVE.search(message))
+
+
+def is_product_comparison(message: str) -> bool:
+    """Return True if message is a product comparison request."""
+    return bool(_PRODUCT_COMPARISON_PATTERNS.search(message))
+
+
+def is_negative_strength_constraint(message: str) -> bool:
+    """Return True if message contains a negative strength/intensity constraint."""
+    return bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(message))
+
+
+def has_form_keyword(text: str) -> bool:
+    """Return True if text contains a product form keyword (flower, edibles, vape, etc.)."""
+    return bool(_FORM_KEYWORDS.search(text))
+
+
 # ── Tool-choice decision ───────────────────────────────────────────────────────
 
 def determine_tool_choice(user_message: str, history: list[dict]) -> str:
