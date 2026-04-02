@@ -587,3 +587,15 @@
 **测试结果：**
 - `venv/bin/python -m pytest tests/test_llm_service.py -v` → 23/23 通过
 - `venv/bin/python -m pytest tests/ -v` → 60/60 通过
+
+## [2026-04-02] 新增 | 为 occasion-ready 恢复场景补充黄金数据集 tc_G10
+
+**变更内容：**
+- `golden_dataset_v2.json`：新增 `tc_G10`，覆盖 `post-workout recovery + body relaxation + mentally clear` 的 occasion-ready 直搜场景
+- 保持 `tc_G9` 不变，避免将 date night 与 recovery 两类边界混入同一黄金 case
+
+**涉及文件：** `golden_dataset_v2.json`
+
+**测试结果：**
+- `venv/bin/python eval/run_eval.py --tc tc_G10` → 1/1 通过
+- `venv/bin/python eval/run_eval.py` → 黄金数据集 23/23 通过（100%）

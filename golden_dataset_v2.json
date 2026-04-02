@@ -10,7 +10,7 @@
     "G - Information Gathering Layer",
     "B - Recommendation Refinement"
   ],
-  "total_cases": 22,
+  "total_cases": 23,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -705,6 +705,36 @@
       "tags": [
         "gathering",
         "occasion-driven",
+        "no-form",
+        "search-immediately"
+      ]
+    },
+    {
+      "id": "tc_G10",
+      "scenario": "information_gathering",
+      "difficulty": "medium",
+      "priority": "P1",
+      "description": "顾客给出明确恢复场景（post-workout / recovery）和体验方向（body relaxation），同时给出清醒 guardrail（mentally clear），但未指定消费方式 → AI 应直接调用 smart_search，不得再问 form",
+      "input": {
+        "user_message": "After hard workouts I want something for recovery and body relaxation, but I still want to stay mentally pretty clear.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "顾客提供了明确恢复场景（after hard workouts / recovery）+ 体验方向（body relaxation）+ guardrail（mentally pretty clear）。信息已足够，AI 应直接调用 smart_search，不得再追问消费方式（flower / edibles / vape）。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（场景+体验方向+guardrail 已完整，应立即搜索）",
+        "AI 没有询问消费方式（不问 flower / edibles / vape 等）",
+        "AI 推荐方向偏向身体放松与恢复，同时避免过度昏沉或过重镇静的描述",
+        "AI 没有直接拒绝帮助或终止对话"
+      ],
+      "tags": [
+        "gathering",
+        "occasion-driven",
+        "recovery",
+        "mentally-clear",
         "no-form",
         "search-immediately"
       ]
