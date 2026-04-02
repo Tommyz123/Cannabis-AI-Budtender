@@ -1,8 +1,9 @@
 """Tool definitions and execution for AI Budtender Agent Loop.
 
 Contains the OpenAI function-calling schema (TOOLS_SCHEMA) and the
-dispatcher (_execute_tool_call) that maps tool names to ProductManager calls.
+dispatcher (execute_tool_call) that maps tool names to ProductManager calls.
 """
+# pylint: disable=line-too-long
 
 import json
 import logging
