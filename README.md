@@ -127,8 +127,11 @@ Set `is_beginner: true` for first-time customers. The backend injects a session-
 ```
 cannabis_AI_BUDTENDER/
 ├── backend/
-│   ├── main.py            # FastAPI app, routes
-│   ├── llm_service.py     # Agent loop, tool calling, prompt logic
+│   ├── main.py            # FastAPI app, /chat and /health routes
+│   ├── llm_service.py     # Agent Loop core — message assembly, LLM calls, fast-path
+│   ├── prompts.py         # All system prompt modules + SYSTEM_PROMPT assembly
+│   ├── router.py          # Query classifiers, tool-choice logic, profile extraction
+│   ├── tool_executor.py   # OpenAI tool schema (TOOLS_SCHEMA) + tool dispatcher
 │   ├── product_manager.py # SQLite loading, multi-criteria search
 │   ├── models.py          # Pydantic request/response schemas
 │   └── config.py          # Global configuration constants
@@ -148,6 +151,35 @@ cannabis_AI_BUDTENDER/
 ├── requirements.txt
 └── .env                   # (not committed) API keys
 ```
+
+---
+
+## Backend Architecture
+
+The backend follows a layered design where each module has a single responsibility:
+
+```
+POST /chat (main.py)
+    │
+    ├── router.py ──────── get_simple_response()      → fast-path (greetings)
+    │
+    └── llm_service.py ─── get_recommendation()
+            │
+            ├── router.py          extract_profile_signals()   session context
+            ├── router.py          determine_tool_choice()     route decision
+            ├── router.py          try_extract_search_params() fast-path search
+            ├── prompts.py         SYSTEM_PROMPT               LLM instructions
+            ├── tool_executor.py   TOOLS_SCHEMA                tool definitions
+            ├── tool_executor.py   execute_tool_call()         tool dispatch
+            └── product_manager.py search_products()           SQLite query
+```
+
+| Module | Responsibility |
+|---|---|
+| `prompts.py` | All prompt rules as independent modules; edit prompts without touching logic |
+| `router.py` | Classify intent, decide tool_choice, extract session profile, fast-path params |
+| `tool_executor.py` | Define OpenAI tool schema; dispatch tool calls to ProductManager |
+| `llm_service.py` | Agent Loop: assemble messages, call OpenAI, handle tool results |
 
 ---
 

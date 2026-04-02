@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-03-29 | 项目阶段: 数据库架构升级完成（CSV+Pandas → SQLite+JSON）
+最后更新: 2026-04-01 | 项目阶段: 后端分层架构重构完成（llm_service.py → 4 模块）
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -104,20 +104,41 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 - `ProductManager.category_index → dict` — 品类 → DataFrame 映射
 - `THC_UNIT_BY_CATEGORY: dict` — 品类 → THC 单位映射常量
 
-### backend/llm_service.py — LLM 集成（Agent Loop）
-- `SYSTEM_PROMPT: str` — 完整 system prompt（医疗保护、Discovery-First、销售规则 A-E、语义映射）
-- `TOOLS_SCHEMA: list` — OpenAI function calling 格式工具定义（smart_search + get_product_details）
-- `get_simple_response(user_message) → str | None` — 简单消息快路径，返回预设回复或 None
+### backend/prompts.py — Prompt 模块（新增）
+- `SYSTEM_PROMPT: str` — 完整 system prompt，由以下模块组装：
+  - `MEDICAL_COMPLIANCE_PROMPT` — 医疗保护规则
+  - `AGE_COMPLIANCE_PROMPT` — 年龄验证规则
+  - `NON_CONSENSUAL_USE_PROMPT` — 非自愿用药拦截
+  - `BEGINNER_SAFETY_PROMPT` — 新手安全规则
+  - `INFORMATION_GATHERING_PROMPT` — 信息收集规则
+  - `RECOMMENDATION_REFINEMENT_PROMPT` — 推荐优化规则
+  - `FALLBACK_SEARCH_PROMPT` — 搜索降级规则
+  - `_SALES_PROMPT` — 销售流程主规则
+
+### backend/router.py — 请求路由与分类（新增）
+- `get_simple_response(user_message) → str | None` — 快路径，返回预设回复或 None
 - `is_medical_query(user_message) → bool` — 检测医疗查询
 - `is_vague_query(user_message) → bool` — 检测模糊查询
 - `is_form_unknown_query(user_message, history) → bool` — 检测有效果但无形式的查询
 - `is_price_feedback_query(user_message) → bool` — 检测价格反馈查询
 - `is_generic_rejection_query(user_message) → bool` — 检测通用拒绝查询
 - `is_vape_hardware_unknown_query(user_message, history) → bool` — 检测 vape 硬件类型未知查询
+- `is_vape_flower_alternative(message) → bool` — 检测 "vape or flower" 混合意图
+- `is_product_comparison(message) → bool` — 检测产品对比请求
+- `is_negative_strength_constraint(message) → bool` — 检测负面强度约束
+- `has_form_keyword(text) → bool` — 检测产品形式关键词
+- `determine_tool_choice(user_message, history) → str` — 决定 tool_choice（none/auto/required）
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
+- `try_extract_search_params(user_message, history, is_beginner) → dict | None` — fast-path 参数提取
+
+### backend/tool_executor.py — Tool 定义与执行（新增）
+- `TOOLS_SCHEMA: list` — OpenAI function calling 格式工具定义（smart_search + get_product_details）
+- `execute_tool_call(tool_call, product_manager) → dict` — 工具调用分发器
+
+### backend/llm_service.py — LLM 集成（Agent Loop）
 - `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表
-- `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop
+- `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop 入口
 
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}
@@ -135,15 +156,21 @@ frontend/chat.js
   │
   └──► POST /chat (backend/main.py)
          │
-         ├── get_simple_response() → 快路径（hi/thanks/bye 等）
+         ├── router.get_simple_response() → 快路径（hi/thanks/bye 等）
          │
-         └──► get_recommendation(history, user_msg, product_manager)
+         └──► llm_service.get_recommendation(history, user_msg, product_manager)
                    │
-                   ├──► OpenAI API (gpt-4o-mini) — 第一次调用
+                   ├──► router.extract_profile_signals()   会话 profile 提取
+                   ├──► router.determine_tool_choice()     路由决策
+                   ├──► router.try_extract_search_params() fast-path 参数提取
+                   ├──► prompts.SYSTEM_PROMPT              系统 prompt
+                   │
+                   ├──► OpenAI API (gpt-4o-mini) — 第一次调用（或 fast-path 跳过）
                    │         └── tool_calls? → smart_search / get_product_details
                    │
-                   ├──► ProductManager.search_products() ←── tool 执行
-                   │         └──► data/products.db（SQLite）
+                   ├──► tool_executor.execute_tool_call()
+                   │         └──► ProductManager.search_products()
+                   │                   └──► data/products.db（SQLite）
                    │
                    └──► OpenAI API — 最终回复
 ```
