@@ -124,6 +124,9 @@ def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
     """
     Return True if the user mentions an effect but no product form,
     AND the conversation history has no form mentioned yet.
+
+    Exception: when a clear occasion/scenario signal is present (e.g. date night,
+    party, workout), information is sufficient to search — do not ask for form.
     """
     has_effect = bool(_EFFECT_KEYWORDS.search(user_message)) or bool(
         _STRAIN_TYPES.search(user_message)
@@ -138,6 +141,9 @@ def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
             return False
     # 品种类型已指定（indica/sativa/hybrid）→ 无需询问形式，直接搜索
     if _STRAIN_TYPES.search(user_message):
+        return False
+    # 明确场景信号（date night / party / workout 等）→ 信息已足够，无需追问形式
+    if _OCCASION_SIGNALS.search(user_message):
         return False
     return True
 

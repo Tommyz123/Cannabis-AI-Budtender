@@ -10,7 +10,7 @@
     "G - Information Gathering Layer",
     "B - Recommendation Refinement"
   ],
-  "total_cases": 21,
+  "total_cases": 22,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -679,6 +679,34 @@
         "negative-constraint",
         "search-immediately",
         "beverage"
+      ]
+    },
+    {
+      "id": "tc_G9",
+      "scenario": "information_gathering",
+      "difficulty": "medium",
+      "priority": "P1",
+      "description": "顾客给出明确使用场景（date night）和效果需求（relaxed/connected），但未指定消费方式 → AI 应直接调用 smart_search，不得再问 form",
+      "input": {
+        "user_message": "I want something for a date night where we feel relaxed, smiley, and connected, not knocked out.",
+        "conversation_history": []
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "auto",
+        "note": "顾客提供了明确场景（date night）+ 多个效果信号（relaxed, smiley, connected, not knocked out）。场景信号明确时信息已足够，AI 应直接调 smart_search，不得再追问消费方式（flower / edibles / vape）。"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search（场景+效果信号完整，应立即搜索）",
+        "AI 没有询问消费方式（不问 flower / edibles / vape 等）",
+        "AI 推荐的产品有放松、开心类效果，且没有过度镇静的描述",
+        "AI 没有直接拒绝帮助或终止对话"
+      ],
+      "tags": [
+        "gathering",
+        "occasion-driven",
+        "no-form",
+        "search-immediately"
       ]
     },
     {
