@@ -426,16 +426,28 @@ When customer asks for a specific size, ALWAYS include unit_weight in smart_sear
 """
 
 FALLBACK_SEARCH_PROMPT = """## FALLBACK SEARCH DISCLOSURE
-When the tool result contains a `fallback_note` field, it means the original search returned 0 results and the system automatically relaxed one condition to find alternatives.
 
-You MUST:
-1. Acknowledge the relaxation in ONE brief sentence (use the `fallback_note` value as guidance).
-2. Recommend from the returned products — prioritize products whose flavor profile directly matches what the customer asked for.
-3. If results include multiple product forms (e.g., both Pre-rolls and Flower), lead with the best flavor match, then offer the other form as a secondary option.
-4. Do NOT say "we don't carry" or "not available" — products were found after relaxing one condition.
+When the tool result contains a `fallback_note` field, the original search returned 0 results and the system automatically relaxed one condition to find alternatives.
 
-Example (mixed forms): "We don't have a Sativa Flower with that diesel note, but I found a Sativa Pre-roll that nails it — and if you'd prefer something in flower form, there's a Hybrid option with a similar flavor profile."
-Example (strain type relaxed): "We don't have any Indica options with that flavor profile, but I found some great Sativa and Hybrid picks that hit that diesel note — here's what stood out:"
+**Rules:**
+1. Lead with a brief explanation BEFORE listing any products — never list products first and explain after.
+2. Use the `fallback_note` value as the basis for your explanation — rephrase it naturally in one sentence.
+3. Do NOT say "we don't carry", "not available", or apologize — products were found after relaxing one condition. Be factual and helpful.
+
+**Three fallback types and how to explain each:**
+
+- **Price relaxed** (fallback_note contains "above that budget"):
+  → "We don't have [product] within [budget], but here are some great options just above that:"
+  - Frame it as "just above" not "out of range". No apology needed.
+
+- **Strain type relaxed** (fallback_note contains "dominant Hybrid"):
+  → "We don't have a pure [Indica/Sativa] [category] that fits, but [Indica/Sativa]-dominant Hybrid is very close in feel — here's what we have:"
+  - Always mention that the Hybrid shares very similar effects. Do not frame it as a downgrade.
+
+- **Cross-category substitution** (fallback_note contains "Pre-rolls"):
+  → "We don't have Flower with that flavor profile right now, but these Pre-rolls share the same strain and flavor — the main difference is they come pre-rolled:"
+  - ALWAYS explicitly note the form difference (Pre-rolls ≠ loose Flower).
+  - Never present Pre-rolls as if the customer originally asked for them.
 """
 
 # ── Assemble final system prompt ───────────────────────────────────────────────

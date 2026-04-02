@@ -371,76 +371,79 @@ class ProductManager:
         limit: int,
     ) -> dict | None:
         """
-        Try one fallback search when the original returns 0 results.
+        Try fallback searches when the original returns 0 results.
 
         Priority:
-          1. Remove strain_type AND category (when query is present) to find flavor matches
-             across all forms; results are sorted by FlavorProfile match first.
-          2. Widen THC range by ±5%
-          3. Relax price limit by +$15
+          1. Relax price (keep category + strain_type — find same product above budget)
+          2. Relax strain_type to partial match (Indica → Indica-Hybrid), keep category + price
+          3. Cross-category substitution (Flower → Pre-rolls), only when flavor query present
 
-        Returns result dict with 'fallback_note' field, or None if all fallbacks also fail.
+        Returns result dict with 'fallback_note' field, or None if all fallbacks fail.
         """
-        def _run(new_category, new_strain_type, new_query, new_min_thc, new_max_thc,
-                 new_max_price, new_budget, note, flavor_priority=False):
+        def _run(new_category, new_strain_type, new_max_price, new_budget, note):
             df = self._apply_filters(
                 df_base.copy(), new_category, new_strain_type, effects, exclude_effects,
-                exclude_categories, new_min_thc, new_max_thc, new_max_price, new_budget,
-                time_of_day, activity_scenario, unit_weight, new_query, is_beginner,
+                exclude_categories, min_thc, max_thc, new_max_price, new_budget,
+                time_of_day, activity_scenario, unit_weight, query, is_beginner,
             )
-            if flavor_priority and new_query and not df.empty and "flavor_profile" in df.columns:
-                df = df.copy()
-                df["_flv_match"] = df["flavor_profile"].str.contains(
-                    new_query, case=False, na=False
-                ).astype(int)
-                if new_budget is not None:
-                    df["_price_dist"] = (df["price"].fillna(0) - new_budget).abs()
-                    df = df.sort_values(["_flv_match", "_price_dist"], ascending=[False, True])
-                    df = df.drop(columns=["_price_dist"])
-                else:
-                    df = df.sort_values("_flv_match", ascending=False)
-                df = df.drop(columns=["_flv_match"])
-            else:
-                df = self._sort_results(df, new_budget)
+            df = self._sort_results(df, new_budget)
             result = self._build_result(df, limit)
             if result["total"] > 0:
                 result["fallback_note"] = note
                 return result
             return None
 
-        # Fallback 1: remove strain_type AND category to find flavor matches across all forms
-        if strain_type:
-            label = f"{strain_type.capitalize()} {category}" if category else strain_type.capitalize()
-            note = (
-                f"No {label} products matched your criteria. "
-                "Showing closest flavor matches across all strain types and forms."
+        def _run_partial_strain(new_max_price, new_budget, note):
+            """Apply partial strain_type match (contains) instead of exact match."""
+            df = self._apply_filters(
+                df_base.copy(), category, None, effects, exclude_effects,
+                exclude_categories, min_thc, max_thc, new_max_price, new_budget,
+                time_of_day, activity_scenario, unit_weight, query, is_beginner,
             )
-            result = _run(None, None, query, min_thc, max_thc, max_price, budget_target, note,
-                          flavor_priority=bool(query))
-            if result:
+            if strain_type:
+                df = df[df["strain_type"].str.lower().str.contains(
+                    strain_type.lower(), na=False
+                )]
+            df = self._sort_results(df, new_budget)
+            result = self._build_result(df, limit)
+            if result["total"] > 0:
+                result["fallback_note"] = note
                 return result
+            return None
 
-        # Fallback 2: widen THC range by ±5%
-        if min_thc is not None or max_thc is not None:
-            new_min = (min_thc - 5) if min_thc is not None else None
-            new_max = (max_thc + 5) if max_thc is not None else None
-            note = (
-                "No products matched the requested THC range. "
-                "Showing nearby options (±5% THC)."
-            )
-            result = _run(category, strain_type, query, new_min, new_max, max_price, budget_target, note)
-            if result:
-                return result
+        cat_label = category or ""
+        strain_label = strain_type.capitalize() if strain_type else ""
+        budget_label = f"${int(max_price or budget_target)}" if (max_price or budget_target) else ""
+        product_label = f"{strain_label} {cat_label}".strip() or "products"
 
-        # Fallback 3: relax price by +$15
+        # ── Fallback 1: Relax price (keep category + strain_type) ─────────────
         if max_price is not None or budget_target is not None:
-            new_max_price = (max_price + 15) if max_price is not None else None
-            new_budget = (budget_target + 15) if budget_target is not None else None
             note = (
-                f"No products found within the original budget. "
-                f"Showing options up to ${int((max_price or budget_target) + 15)}."
+                f"No {product_label} found within {budget_label}. "
+                "Showing options above that budget:"
             )
-            result = _run(category, strain_type, query, min_thc, max_thc, new_max_price, new_budget, note)
+            result = _run(category, strain_type, None, None, note)
+            if result:
+                return result
+
+        # ── Fallback 2: Relax strain_type to partial match (keep category + price) ─
+        if strain_type:
+            note = (
+                f"No pure {product_label} matched your criteria. "
+                f"{strain_label}-dominant Hybrid is very similar in effect — showing those:"
+            )
+            result = _run_partial_strain(max_price, budget_target, note)
+            if result:
+                return result
+
+        # ── Fallback 3: Cross-category Flower → Pre-rolls (only if flavor query present) ─
+        if category and category.lower() == "flower" and query:
+            flower_label = f"{strain_label} Flower" if strain_label else "Flower"
+            note = (
+                f"No {flower_label} with that flavor profile available. "
+                "Pre-rolls share the same strain and flavor — showing those as a close alternative:"
+            )
+            result = _run("Pre-rolls", strain_type, max_price, budget_target, note)
             if result:
                 return result
 
