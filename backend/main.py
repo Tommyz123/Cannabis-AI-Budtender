@@ -7,7 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from backend.models import ChatRequest, ChatResponse
 from backend.product_manager import ProductManager
-from backend.llm_service import get_recommendation, get_simple_response
+from backend.llm_service import get_recommendation
+from backend.router import get_simple_response
 
 logging.basicConfig(
     level=logging.INFO,

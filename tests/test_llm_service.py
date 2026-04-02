@@ -3,16 +3,10 @@
 from unittest.mock import MagicMock, patch
 import pytest
 import openai
-from backend.llm_service import (
-    SYSTEM_PROMPT,
-    build_messages,
-    get_recommendation,
-    get_simple_response,
-    is_medical_query,
-    is_vague_query,
-    is_form_unknown_query,
-    TOOLS_SCHEMA,
-)
+from backend.llm_service import build_messages, get_recommendation
+from backend.prompts import SYSTEM_PROMPT
+from backend.router import get_simple_response, is_medical_query, is_vague_query, is_form_unknown_query
+from backend.tool_executor import TOOLS_SCHEMA
 
 
 # ── System prompt tests ───────────────────────────────────────────────────────
