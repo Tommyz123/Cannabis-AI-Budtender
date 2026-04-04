@@ -54,8 +54,13 @@ _FORM_KEYWORDS = re.compile(
 )
 
 _EFFECT_KEYWORDS = re.compile(
-    r"\b(sleep|relax|relaxing|relaxed|calm|calming|energy|energetic|focus|creative|"
+    r"\b(sleep|relax|relaxation|relaxing|relaxed|calm|calming|energy|energetic|focus|creative|"
     r"uplifted|happy|pain|sore|anxiety|stress|stressed|euphoric|sedated|high|stoned|chill|unwind)\b",
+    re.IGNORECASE,
+)
+
+_SOCIAL_VIBE_KEYWORDS = re.compile(
+    r"\b(smiley|connected|connection|giggly|laugh|laughing|social|sociable|romantic|intimate)\b",
     re.IGNORECASE,
 )
 
@@ -87,6 +92,10 @@ _PRODUCT_COMPARISON_PATTERNS = re.compile(
 _NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
     r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
     r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
+    r"\bnot\s+knocked\s+out\b|"
+    r"\bnot\s+paranoid\b|"
+    r"\bmentally\s+(pretty\s+)?clear\b|"
+    r"\bclear(?:-|\s)?headed\b|"
     r"\bnothing\s+too\s+(heavy|intense|strong)\b|"
     r"\b(without|no)\s+(a\s+)?hangover\b|"
     r"\b(do\s*n'?t|do\s+not)\s+want\s+(a\s+)?hangover\b|"
@@ -100,6 +109,7 @@ _PRICE_FEEDBACK_KEYWORDS = re.compile(
 )
 
 _PRICE_NUMBER = re.compile(r"\$\s*\d+|\d+\s*dollars?|\d+\s*bucks?", re.IGNORECASE)
+_ASSISTANT_PRICE_LINE = re.compile(r"Price:\s*\$(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 _GENERIC_REJECTION_PATTERNS = re.compile(
     r"\b(don'?t (really |particularly )?(like|want|need) any( of these)?|"
@@ -160,6 +170,38 @@ def is_price_feedback_query(user_message: str) -> bool:
     return True
 
 
+def _extract_previous_recommendation_prices(history: list[dict]) -> list[float]:
+    """Return previously recommended prices parsed from assistant messages."""
+    prices: list[float] = []
+    for msg in history:
+        if msg.get("role") != "assistant":
+            continue
+        for price in _ASSISTANT_PRICE_LINE.findall(msg.get("content", "")):
+            prices.append(float(price))
+    return prices
+
+
+def is_price_refinement_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when the user asks for something cheaper after concrete products
+    were already recommended in the conversation.
+    """
+    if not is_price_feedback_query(user_message):
+        return False
+    return bool(_extract_previous_recommendation_prices(history))
+
+
+def derive_cheaper_price_cap(history: list[dict]) -> float | None:
+    """Derive a strict cap just below the cheapest previously recommended item."""
+    previous_prices = _extract_previous_recommendation_prices(history)
+    if not previous_prices:
+        return None
+    cheapest = min(previous_prices)
+    if cheapest <= 1:
+        return None
+    return round(cheapest - 0.01, 2)
+
+
 def is_generic_rejection_query(user_message: str) -> bool:
     """
     Return True if the user rejects all current recommendations without specifying why.
@@ -207,6 +249,59 @@ def is_negative_strength_constraint(message: str) -> bool:
     return bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(message))
 
 
+def is_occasion_ready_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when occasion + vibe/effect signals are complete enough to search
+    even if the customer has not specified a product form yet.
+    """
+    if has_form_keyword(user_message):
+        return False
+
+    user_history = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    )
+    all_user_text = f"{user_history} {user_message}".strip()
+    if not _OCCASION_SIGNALS.search(all_user_text):
+        return False
+
+    has_effect = bool(_EFFECT_KEYWORDS.search(all_user_text)) or bool(
+        _STRAIN_TYPES.search(all_user_text)
+    )
+    has_social_vibe = bool(_SOCIAL_VIBE_KEYWORDS.search(all_user_text))
+    has_guardrail = bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(all_user_text))
+    return (has_effect or has_social_vibe) and has_guardrail
+
+
+def is_beginner_ready_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when a beginner provides enough gentle/sleep intent to default
+    safely to beginner edibles even if product form is still unknown.
+    """
+    user_history = " ".join(
+        msg.get("content", "") for msg in history if msg.get("role") == "user"
+    )
+    all_user_text = f"{user_history} {user_message}".strip()
+
+    if not _BEGINNER_SIGNALS.search(all_user_text):
+        return False
+    if has_form_keyword(all_user_text):
+        return False
+
+    has_relax_intent = bool(
+        re.search(r"\b(relax|relaxing|calm|gentle|mild|light|easy|quiet|soft)\b", all_user_text, re.I)
+    )
+    has_sleep_intent = bool(re.search(r"\b(sleep|sleepy|bed|night)\b", all_user_text, re.I))
+    has_guardrail = bool(
+        re.search(
+            r"\b(too high|too strong|nothing intense|not intense|not too intense|"
+            r"mildest|way too high|overwhelm|overwhelming)\b",
+            all_user_text,
+            re.I,
+        )
+    )
+    return has_sleep_intent or (has_relax_intent and has_guardrail)
+
+
 def has_form_keyword(text: str) -> bool:
     """Return True if text contains a product form keyword (flower, edibles, vape, etc.)."""
     return bool(_FORM_KEYWORDS.search(text))
@@ -220,10 +315,16 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_vague_query(user_message):
         return "none"
+    if is_beginner_ready_query(user_message, history):
+        return "required"
+    if is_occasion_ready_query(user_message, history):
+        return "required"
     if is_form_unknown_query(user_message, history):
         return "none"
     if is_vape_hardware_unknown_query(user_message, history):
         return "none"
+    if is_price_refinement_query(user_message, history):
+        return "required"
     if is_price_feedback_query(user_message):
         return "none"
     if is_generic_rejection_query(user_message):
@@ -250,7 +351,8 @@ _EXPERT_SIGNALS = re.compile(
 )
 _OCCASION_SIGNALS = re.compile(
     r"\b(party|social|with friends|date night|alone|solo|hiking|camping|"
-    r"studying|work|gaming|movie|concert|yoga|gym|outdoor)\b",
+    r"studying|work|gaming|movie|concert|yoga|gym|outdoor|workout|workouts|"
+    r"recovery|recovering|training|post-workout)\b",
     re.IGNORECASE,
 )
 _BUDGET_SIGNALS = re.compile(
@@ -410,6 +512,7 @@ def try_extract_search_params(
         m.get("content", "") for m in history if m.get("role") == "user"
     )
     all_user = (user_history + " " + msg_lower).lower()
+    beginner_ready = is_beginner and is_beginner_ready_query(user_message, history)
 
     # ── Category ─────────────────────────────────────────────────────────────
     _CAT_PATTERNS = [
@@ -428,7 +531,10 @@ def try_extract_search_params(
             break
 
     if not category:
-        return None
+        if beginner_ready:
+            category = "Edibles"
+        else:
+            return None
 
     # ── Strain type ───────────────────────────────────────────────────────────
     effects: list[str] = []
@@ -456,9 +562,21 @@ def try_extract_search_params(
         if "Calm" not in effects:
             effects.append("Calm")
 
-    if re.search(r"\b(energy|energetic|focus|creative)\b|提神|精力|专注|创意", all_user, re.I):
+    if re.search(
+        r"\b(energy|energetic|focus|creative|uplift(?:ed|ing)?|happy|draw(?:ing)?|art)\b|提神|精力|专注|创意",
+        all_user,
+        re.I,
+    ):
         if "Energetic" not in effects:
             effects.append("Energetic")
+        if re.search(r"\buplift(?:ed|ing)?|happy\b", all_user, re.I) and "Uplifted" not in effects:
+            effects.append("Uplifted")
+
+    if beginner_ready and not effects and not strain_type:
+        if re.search(r"\b(sleep|sleepy|bed|night)\b", all_user, re.I):
+            effects = ["Relaxed", "Sleepy"]
+        else:
+            effects = ["Relaxed"]
 
     if not effects and not strain_type:
         return None
@@ -485,5 +603,10 @@ def try_extract_search_params(
         if dollar_match:
             amount = float(dollar_match.group(1) or dollar_match.group(2))
             params["budget_target"] = amount
+
+    if "max_price" not in params and "budget_target" not in params:
+        cheaper_cap = derive_cheaper_price_cap(history)
+        if cheaper_cap is not None and is_price_refinement_query(user_message, history):
+            params["max_price"] = cheaper_cap
 
     return params

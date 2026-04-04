@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-04-01 | 项目阶段: 后端分层架构重构完成（llm_service.py → 4 模块）
+最后更新: 2026-04-02 | 项目阶段: 黄金数据集新增 beginner-ready 直搜用例，持续修正信息收集路由
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -110,7 +110,10 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
   - `AGE_COMPLIANCE_PROMPT` — 年龄验证规则
   - `NON_CONSENSUAL_USE_PROMPT` — 非自愿用药拦截
   - `BEGINNER_SAFETY_PROMPT` — 新手安全规则
+  - `BEGINNER_READY_SEARCH_PROMPT` — 新手未指定 form，但已给出 gentle/sleep-friendly 首次体验诉求时，禁止停在过渡话术，要求立即按 beginner-safe edible 方向搜索
   - `INFORMATION_GATHERING_PROMPT` — 信息收集规则
+  - `OCCASION_READY_SEARCH_PROMPT` — “date night / social”等场景 + vibe/guardrail 已完整时，禁止继续追问 form，要求立即搜索
+  - `RECOMMENDATION_REFINEMENT_PROMPT` 中 Price Feedback 规则 — 已区分“首次预算澄清”和“已有推荐后的 cheaper refinement”；后者需直接给更便宜选项，并在结尾软性邀请用户补充 price range
   - `RECOMMENDATION_REFINEMENT_PROMPT` — 推荐优化规则
   - `FALLBACK_SEARCH_PROMPT` — 搜索降级规则
   - `_SALES_PROMPT` — 销售流程主规则
@@ -120,17 +123,21 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 - `is_medical_query(user_message) → bool` — 检测医疗查询
 - `is_vague_query(user_message) → bool` — 检测模糊查询
 - `is_form_unknown_query(user_message, history) → bool` — 检测有效果但无形式的查询
+- `is_beginner_ready_query(user_message, history) → bool` — 检测“新手 + gentle/sleep-friendly + 无 form”已足够直接搜索的请求
 - `is_price_feedback_query(user_message) → bool` — 检测价格反馈查询
+- `is_price_refinement_query(user_message, history) → bool` — 检测“已有具体推荐后，用户要求更便宜替代”的追问
 - `is_generic_rejection_query(user_message) → bool` — 检测通用拒绝查询
 - `is_vape_hardware_unknown_query(user_message, history) → bool` — 检测 vape 硬件类型未知查询
 - `is_vape_flower_alternative(message) → bool` — 检测 "vape or flower" 混合意图
 - `is_product_comparison(message) → bool` — 检测产品对比请求
 - `is_negative_strength_constraint(message) → bool` — 检测负面强度约束
+- `is_occasion_ready_query(user_message, history) → bool` — 检测“date night / social”等场景 + vibe/guardrail 已完整、可直接搜索的请求
 - `has_form_keyword(text) → bool` — 检测产品形式关键词
-- `determine_tool_choice(user_message, history) → str` — 决定 tool_choice（none/auto/required）
+- `determine_tool_choice(user_message, history) → str` — 决定 tool_choice（none/auto/required）；当 `is_occasion_ready_query=True` 或 `is_beginner_ready_query=True` 时强制 `required`
+- `derive_cheaper_price_cap(history) → float | None` — 从历史 assistant 推荐价格中提取最便宜项，并推导更低的价格上限供 cheaper follow-up 使用
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
-- `try_extract_search_params(user_message, history, is_beginner) → dict | None` — fast-path 参数提取
+- `try_extract_search_params(user_message, history, is_beginner) → dict | None` — fast-path 参数提取；已支持从历史 user intent 继承 category/effects，并在 cheaper follow-up 时自动带入更低价格上限；当命中 beginner-ready 请求时默认提取 `category='Edibles'`，并按语义补齐 `effects=['Relaxed']` 或 `['Relaxed','Sleepy']`
 
 ### backend/tool_executor.py — Tool 定义与执行（新增）
 - `TOOLS_SCHEMA: list` — OpenAI function calling 格式工具定义（smart_search + get_product_details）
@@ -139,6 +146,7 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 ### backend/llm_service.py — LLM 集成（Agent Loop）
 - `build_messages(history, user_message, profile=None) → list[dict]` — 组装消息列表
 - `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop 入口
+- `_prepare_messages(...)` 仍保留价格反馈、价格 refinement、vape/flower 二选一、产品对比、负面强度约束等临时注入；`occasion-ready` 规则已迁移至 `prompts.py` 独立模块
 
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}

@@ -12,6 +12,7 @@ from backend.config import OPENAI_API_KEY, MODEL_NAME
 from backend.prompts import SYSTEM_PROMPT
 from backend.tool_executor import TOOLS_SCHEMA, execute_tool_call
 from backend.router import (
+    is_price_refinement_query,
     is_price_feedback_query,
     is_vape_flower_alternative,
     is_product_comparison,
@@ -85,7 +86,16 @@ def _prepare_messages(
         )
 
     # Inject targeted action instruction for price feedback (overrides "Customer feedback: price too high")
-    if is_price_feedback_query(user_message):
+    if is_price_refinement_query(user_message, history):
+        messages[0]["content"] += (
+            "\n\n[IMMEDIATE ACTION REQUIRED]: Customer asked for something cheaper AFTER already seeing concrete recommendations. "
+            "You MUST call smart_search immediately and keep the same vibe, effect direction, and form whenever possible. "
+            "Use a lower-price filter than the previous options when available. "
+            "Do NOT ask 'What price range works for you?' as the main response. "
+            "After recommending cheaper options, end with one soft invitation such as "
+            "'If you have a price range in mind, let me know and I can narrow it down even better.'"
+        )
+    elif is_price_feedback_query(user_message):
         messages[0]["content"] += (
             "\n\n[IMMEDIATE ACTION REQUIRED]: Customer said prices are too high but has NOT specified a budget. "
             "Your response MUST be ONE question only: ask what price range works for them. "
