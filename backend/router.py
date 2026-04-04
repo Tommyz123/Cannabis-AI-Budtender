@@ -109,7 +109,7 @@ _PRICE_FEEDBACK_KEYWORDS = re.compile(
 )
 
 _PRICE_NUMBER = re.compile(r"\$\s*\d+|\d+\s*dollars?|\d+\s*bucks?", re.IGNORECASE)
-_ASSISTANT_PRICE_LINE = re.compile(r"Price:\s*\$(\d+(?:\.\d+)?)", re.IGNORECASE)
+_ASSISTANT_PRICE_LINE = re.compile(r"(?<!\w)\*{0,2}Price\*{0,2}:?\*{0,2}\s*\$(\d+(?:\.\d+)?)", re.IGNORECASE)
 
 _GENERIC_REJECTION_PATTERNS = re.compile(
     r"\b(don'?t (really |particularly )?(like|want|need) any( of these)?|"
@@ -569,7 +569,7 @@ def try_extract_search_params(
     ):
         if "Energetic" not in effects:
             effects.append("Energetic")
-        if re.search(r"\buplift(?:ed|ing)?|happy\b", all_user, re.I) and "Uplifted" not in effects:
+        if re.search(r"\b(uplift(?:ed|ing)?|happy)\b", all_user, re.I) and "Uplifted" not in effects:
             effects.append("Uplifted")
 
     if beginner_ready and not effects and not strain_type:

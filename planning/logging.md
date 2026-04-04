@@ -3,6 +3,12 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-04] 修复 | router.py 两处 regex bug
+- B: `r"\buplift(?:ed|ing)?|happy\b"` 缺左边界，改为 `r"\b(uplift(?:ed|ing)?|happy)\b"`，防止 "unhappy" 误匹配 Uplifted
+- A: `_ASSISTANT_PRICE_LINE` 无法匹配 `**Price:** $45` 粗体格式，改为 `(?<!\w)\*{0,2}Price\*{0,2}:?\*{0,2}\s*\$(\d+(?:\.\d+)?)`，兼容 plain/bold 两种格式
+- 涉及文件：backend/router.py
+- 测试：全集 24/24 100%，无回退
+
 ## [2026-04-04] 修复 | tc_C3 新手 edibles 剂量提醒不稳定
 - 问题：新手推荐含 10mg gummies 时，AI 用"start with one piece"而非"start with half a piece"，且有时漏 "start low, go slow"
 - 根因：prompt 规则为软性语气（always advise），且两条要求分散，LLM 每次只记住其中一条
