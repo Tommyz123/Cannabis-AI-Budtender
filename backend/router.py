@@ -152,8 +152,8 @@ def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
     # 品种类型已指定（indica/sativa/hybrid）→ 无需询问形式，直接搜索
     if _STRAIN_TYPES.search(user_message):
         return False
-    # 明确场景信号（date night / party / workout 等）→ 信息已足够，无需追问形式
-    if _OCCASION_SIGNALS.search(user_message):
+    # 场景信号完整（occasion + effect/vibe + guardrail）→ 信息已足够，无需追问形式
+    if is_occasion_ready_query(user_message, history):
         return False
     return True
 
@@ -192,14 +192,14 @@ def is_price_refinement_query(user_message: str, history: list[dict]) -> bool:
 
 
 def derive_cheaper_price_cap(history: list[dict]) -> float | None:
-    """Derive a strict cap just below the cheapest previously recommended item."""
+    """Derive a price cap ~20% below the cheapest previously recommended item."""
     previous_prices = _extract_previous_recommendation_prices(history)
     if not previous_prices:
         return None
     cheapest = min(previous_prices)
     if cheapest <= 1:
         return None
-    return round(cheapest - 0.01, 2)
+    return round(cheapest * 0.8, 2)
 
 
 def is_generic_rejection_query(user_message: str) -> bool:

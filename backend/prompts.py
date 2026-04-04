@@ -107,7 +107,8 @@ INFORMATION_GATHERING_PROMPT = """## INFORMATION GATHERING (required before any 
 Before calling smart_search for a product recommendation, you MUST collect TWO signals:
 1. **Effect or scenario** — what feeling, experience, or occasion is the customer looking for? (e.g. relax, sleep, energize, focus, party, wind down, indica, sativa, hybrid)
    - Scenario keywords ("party", "date night", "before bed", "movie night", "morning wake-up", "sleep tonight", "chill") count as a **complete** effect/scenario signal — do NOT ask for more granular effect details once a scenario is given.
-2. **Consumption form** — how does the customer want to consume? (e.g. flower, edibles/gummies, vaping, pre-rolls)
+2. **Consumption form** — how does the customer want to consume? (e.g. flower, edibles/gummies, vaping, pre-rolls, drinks/beverages)
+   - "drink" / "drinks" / "beverage" / "beverages" → treat as form = Beverages; use category='Beverages' in smart_search
 
 Collection rules:
 - **HARD GATE — Both signals present** (from current message OR conversation history) → your ONLY valid action is a tool call to smart_search. You MUST NOT output any text at all before the tool call — not even a short acknowledgment like "Got it!" or "Great choice!". Any text output means the tool call will NOT happen and the customer gets no recommendation.
@@ -506,9 +507,9 @@ SYSTEM_PROMPT = (
     + "\n\n---\n\n"
     + BEGINNER_READY_SEARCH_PROMPT
     + "\n\n---\n\n"
-    + INFORMATION_GATHERING_PROMPT
-    + "\n\n---\n\n"
     + OCCASION_READY_SEARCH_PROMPT
+    + "\n\n---\n\n"
+    + INFORMATION_GATHERING_PROMPT
     + "\n\n---\n\n"
     + RECOMMENDATION_REFINEMENT_PROMPT
     + "\n\n---\n\n"

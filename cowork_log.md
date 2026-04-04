@@ -10,3 +10,5 @@
 [2026-04-04 00:45] 修复 | feature/price-followup-fix 合并前检查 | 发现2个单测失败（beginner-ready 测试用例措辞不真实）+ eval tc_G11 失败，替换为真实药房场景表达后 65 passed、tc_G11 ✅，顺利合并入 main
 [2026-04-04 17:03] 修复 | tc_C3 新手 edibles 剂量提醒 | 全集 24/24 100%，无回退，分支 feature/compliance-c3-fix
 [2026-04-04 17:49] 修复 | router.py regex bugs (A+B) | happy 边界修复 + price regex 兼容粗体格式，全集 24/24 100%
+[2026-04-04 18:20] 修复 | eval/run_eval.py rate limit 问题 | max_workers 4→1，全集顺序跑，23/24 通过（96%），tc_G8 失败为预存饮料品类问题与本轮 C/D/H 改动无关
+[2026-04-04 18:32] 修复 | tc_G8 Beverages 品类映射 | prompts.py INFORMATION_GATHERING_PROMPT 补充 drink→Beverages 映射，全集 24/24 100%

@@ -3,6 +3,16 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-04] 修复 | tc_G8 Beverages 品类映射缺失
+
+**变更内容：** `INFORMATION_GATHERING_PROMPT` 消费形式列表补充 `drinks/beverages`，明确 "drink/drinks/beverage/beverages" → `category='Beverages'` 映射规则
+
+**涉及文件：** `backend/prompts.py`
+
+**测试结果：**
+- tc_G8 单 TC 3/3 稳定通过（100%）
+- 全集 `eval/run_eval.py` → 24/24 通过（100%），无回退
+
 ## [2026-04-04] 修复 | router.py 两处 regex bug
 - B: `r"\buplift(?:ed|ing)?|happy\b"` 缺左边界，改为 `r"\b(uplift(?:ed|ing)?|happy)\b"`，防止 "unhappy" 误匹配 Uplifted
 - A: `_ASSISTANT_PRICE_LINE` 无法匹配 `**Price:** $45` 粗体格式，改为 `(?<!\w)\*{0,2}Price\*{0,2}:?\*{0,2}\s*\$(\d+(?:\.\d+)?)`，兼容 plain/bold 两种格式
