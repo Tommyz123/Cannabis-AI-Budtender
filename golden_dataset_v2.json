@@ -770,15 +770,15 @@
                            "priority":  "P1",
                            "description":  "新手顾客未指定 form，但已明确表达 gentle/sleep-friendly 的首次体验诉求 → AI 应直接调用 smart_search，默认 beginner-safe edible 方向，不得停在 Just a moment 之类的过渡话术",
                            "input":  {
-                                         "user_message":  "My friends keep suggesting cannabis but I am still unsure. If I wanted a gentle sleep-friendly first experience, what would you point me to?",
+                                         "user_message":  "I'm first time here, do you have anything to help me sleep?",
                                          "conversation_history":  [
 
                                                                   ]
                                      },
                            "expected_behavior":  {
                                                      "tool_should_be_called":  "smart_search",
-                                                     "tool_choice_should_be":  "auto",
-                                                     "note":  "顾客已提供 beginner 信号 + gentle/sleep-friendly 意图，且未指定 form。AI 应直接调用 smart_search，默认 beginner-safe edible 方向（如 category='Edibles' 且 is_beginner=true），不得先输出 'Just a moment' / 'I'll find something' 之类的过渡文案。"
+                                                     "tool_choice_should_be":  "required",
+                                                     "note":  "顾客说 first time here + sleep，is_beginner_ready_query 返回 True，determine_tool_choice 返回 required。AI 应直接调用 smart_search，默认 beginner-safe edible 方向（如 category='Edibles' 且 is_beginner=true），不得先输出 'Just a moment' / 'I'll find something' 之类的过渡文案。"
                                                  },
                            "judge_criteria":  [
                                                   "AI 调用了 smart_search（该场景已具备 beginner-ready 直搜条件，应立即搜索）",

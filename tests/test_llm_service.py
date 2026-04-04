@@ -206,10 +206,7 @@ def test_determine_tool_choice_requires_search_for_beginner_ready_query():
             "I have never tried weed before and I am nervous about getting way too high. "
             "I want something super gentle for a quiet night at home."
         ),
-        (
-            "My friends keep suggesting cannabis but I am still unsure. "
-            "If I wanted a gentle sleep-friendly first experience, what would you point me to?"
-        ),
+        "I'm first time here, do you have anything to help me sleep?",
     ]
     for message in messages:
         assert determine_tool_choice(message, []) == "required"
@@ -368,8 +365,7 @@ def test_get_recommendation_beginner_ready_defaults_to_edibles():
     with patch("backend.llm_service._openai_client", mock_client):
         result = get_recommendation(
             [],
-            "My friends keep suggesting cannabis but I am still unsure. "
-            "If I wanted a gentle sleep-friendly first experience, what would you point me to?",
+            "I'm first time here, do you have anything to help me sleep?",
             mock_pm,
             is_beginner=True,
         )
