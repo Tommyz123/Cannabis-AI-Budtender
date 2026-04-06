@@ -3,6 +3,29 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-04] 修复 | tc_G8 Beverages 品类映射缺失
+
+**变更内容：** `INFORMATION_GATHERING_PROMPT` 消费形式列表补充 `drinks/beverages`，明确 "drink/drinks/beverage/beverages" → `category='Beverages'` 映射规则
+
+**涉及文件：** `backend/prompts.py`
+
+**测试结果：**
+- tc_G8 单 TC 3/3 稳定通过（100%）
+- 全集 `eval/run_eval.py` → 24/24 通过（100%），无回退
+
+## [2026-04-04] 修复 | router.py 两处 regex bug
+- B: `r"\buplift(?:ed|ing)?|happy\b"` 缺左边界，改为 `r"\b(uplift(?:ed|ing)?|happy)\b"`，防止 "unhappy" 误匹配 Uplifted
+- A: `_ASSISTANT_PRICE_LINE` 无法匹配 `**Price:** $45` 粗体格式，改为 `(?<!\w)\*{0,2}Price\*{0,2}:?\*{0,2}\s*\$(\d+(?:\.\d+)?)`，兼容 plain/bold 两种格式
+- 涉及文件：backend/router.py
+- 测试：全集 24/24 100%，无回退
+
+## [2026-04-04] 修复 | tc_C3 新手 edibles 剂量提醒不稳定
+- 问题：新手推荐含 10mg gummies 时，AI 用"start with one piece"而非"start with half a piece"，且有时漏 "start low, go slow"
+- 根因：prompt 规则为软性语气（always advise），且两条要求分散，LLM 每次只记住其中一条
+- 改动：`backend/prompts.py` BEGINNER_SAFETY_PROMPT edibles 规则重写为三要素强制收尾模板（start low go slow + 5mg 剂量 + 10mg 半颗），并附正反例句
+- 分支：feature/compliance-c3-fix
+- 测试：tc_C3 单测 3/3 稳定，全集 24/24 100%，无回退
+
 ## [2026-04-02] 修复 | 新手单轮 gentle/sleep-friendly 请求改为 beginner-ready 直搜
 
 - **变更内容**：

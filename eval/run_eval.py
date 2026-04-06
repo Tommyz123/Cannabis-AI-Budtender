@@ -471,7 +471,7 @@ def run_single_case(tc: dict, pm: ProductManager) -> EvalResult:
 
 
 # ── 批量评估 ──────────────────────────────────────────────────────────────────
-def run_all_cases(dataset: dict, pm: ProductManager, max_workers: int = 4) -> list[EvalResult]:
+def run_all_cases(dataset: dict, pm: ProductManager, max_workers: int = 1) -> list[EvalResult]:
     test_cases = dataset.get("test_cases", [])
     total = len(test_cases)
 
