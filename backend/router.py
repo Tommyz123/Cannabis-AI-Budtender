@@ -307,6 +307,29 @@ def has_form_keyword(text: str) -> bool:
     return bool(_FORM_KEYWORDS.search(text))
 
 
+def is_form_confirmation_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when the user confirms or specifies a product form and an effect/strain
+    signal is already known from conversation history.
+
+    Forces tool_choice='required' to prevent transitional-text-only responses
+    (e.g. "I'll find some edibles... Just a moment!" without actually calling the tool).
+    """
+    if not has_form_keyword(user_message):
+        return False
+    # Must have prior user history with an effect or strain signal
+    user_history = " ".join(m.get("content", "") for m in history if m.get("role") == "user")
+    if not user_history:
+        return False
+    has_prior_signal = bool(_EFFECT_KEYWORDS.search(user_history)) or bool(_STRAIN_TYPES.search(user_history))
+    if not has_prior_signal:
+        return False
+    # Product comparison goes through LLM
+    if is_product_comparison(user_message):
+        return False
+    return True
+
+
 # ── Tool-choice decision ───────────────────────────────────────────────────────
 
 def determine_tool_choice(user_message: str, history: list[dict]) -> str:
@@ -318,6 +341,8 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
     if is_beginner_ready_query(user_message, history):
         return "required"
     if is_occasion_ready_query(user_message, history):
+        return "required"
+    if is_form_confirmation_query(user_message, history):
         return "required"
     if is_form_unknown_query(user_message, history):
         return "none"
@@ -587,6 +612,15 @@ def try_extract_search_params(
         params["strain_type"] = strain_type
     if effects:
         params["effects"] = effects[:2]
+    # Auto-detect beginner from conversation history if not set via API request.
+    # Covers the case where the frontend didn't pass is_beginner=True but the
+    # user clearly identified as a first-timer earlier in the conversation.
+    if not is_beginner and history:
+        user_history_for_beginner = " ".join(
+            m.get("content", "") for m in history if m.get("role") == "user"
+        )
+        if _BEGINNER_SIGNALS.search(user_history_for_beginner):
+            is_beginner = True
     if is_beginner:
         params["is_beginner"] = True
 

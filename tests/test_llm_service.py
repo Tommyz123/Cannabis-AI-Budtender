@@ -345,7 +345,7 @@ def test_get_recommendation_price_refinement_uses_lower_price_cap():
     mock_pm.search_products.assert_called_once_with(
         category="Flower",
         effects=["Energetic", "Uplifted"],
-        max_price=31.99,
+        max_price=25.6,  # cheapest in history is $32; 32 * 0.8 = 25.6
     )
 
 
