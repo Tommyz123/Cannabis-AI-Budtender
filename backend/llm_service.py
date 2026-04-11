@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # ── Message assembly ───────────────────────────────────────────────────────────
 
-RECENT_HISTORY_LIMIT = 4  # Only send last 4 messages (2 turns) to OpenAI; full history used for profile extraction
+RECENT_HISTORY_LIMIT = 10  # Only send last 10 messages (5 turns) to OpenAI; full history used for profile extraction
 
 
 def build_messages(
@@ -299,6 +299,8 @@ def get_recommendation(
         RuntimeError: If the API call fails.
     """
     profile = extract_profile_signals(user_message, history)
+    if not is_beginner and profile.get("experience_level") == "beginner":
+        is_beginner = True
     tool_choice = determine_tool_choice(user_message, history)
     messages = _prepare_messages(history, user_message, profile, is_beginner)
 
