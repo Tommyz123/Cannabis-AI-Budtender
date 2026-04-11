@@ -3,6 +3,18 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-04-11] 修复 | tc_M1 多轮上下文 — form 确认不调工具 + beginner 自动检测
+
+- **变更内容**：
+  1. `backend/router.py` — 新增 `is_form_confirmation_query(user_message, history)`：当前消息含 form keyword + 历史有 effect/strain 信号 + 非产品对比请求时返回 True，在 `determine_tool_choice()` 中接入，返回 `"required"`，防止 LLM 产生过渡话术但不调工具
+  2. `backend/router.py` — `try_extract_search_params()` 新增历史 beginner 自动检测：当 `is_beginner=False` 时扫描历史 user 消息中的 `_BEGINNER_SIGNALS`，自动设 `is_beginner=True`，确保跨轮新手身份保留（不依赖前端传参）
+  3. `tests/test_llm_service.py` — 修正 pre-existing 测试 bug：`test_get_recommendation_price_refinement_uses_lower_price_cap` 期望值从 `31.99` 改为 `25.6`（历史最低价 $32，32×0.8=25.6）
+- **涉及文件**：`backend/router.py`、`tests/test_llm_service.py`
+- **测试结果**：
+  - `pytest tests/ -q` → 65/65 通过
+  - `eval --tc tc_M1` 单测 3/3 稳定通过（100%）
+  - 全集 `eval/run_eval.py` → **25/25 通过（100%）**，无回退
+
 ## [2026-04-04] 修复 | tc_G8 Beverages 品类映射缺失
 
 **变更内容：** `INFORMATION_GATHERING_PROMPT` 消费形式列表补充 `drinks/beverages`，明确 "drink/drinks/beverage/beverages" → `category='Beverages'` 映射规则
