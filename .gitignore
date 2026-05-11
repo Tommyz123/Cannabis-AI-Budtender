@@ -24,3 +24,9 @@ PROJECT_PLAN_v1.md
 
 # pip bootstrap script
 get-pip.py
+
+# Next.js frontend (not deployed in this iteration)
+frontend-next/
+
+# Windows batch launchers (local convenience only)
+*.bat

@@ -1,13 +1,15 @@
 """FastAPI application entry point for AI Budtender."""
 
+import json
 import time
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from backend.models import ChatRequest, ChatResponse
 from backend.product_manager import ProductManager
-from backend.llm_service import get_recommendation
+from backend.llm_service import get_recommendation, get_recommendation_stream
 from backend.router import get_simple_response
 
 logging.basicConfig(
@@ -77,3 +79,39 @@ def chat(request: ChatRequest):
 
     logger.info("session=%s response_time_ms=%.1f", request.session_id, elapsed_ms)
     return ChatResponse(reply=reply, session_id=request.session_id, response_time_ms=elapsed_ms)
+
+
+@app.post("/chat/stream")
+def chat_stream(request: ChatRequest):
+    """
+    Streaming version of /chat. Returns text/event-stream (SSE).
+    Each event: data: {"chunk": "..."}\n\n
+    Final event: data: [DONE]\n\n
+    """
+    if not request.user_message.strip():
+        raise HTTPException(status_code=400, detail="user_message cannot be empty")
+
+    # Fast path: simple greetings skip LLM entirely — return as single chunk
+    simple = get_simple_response(request.user_message)
+    if simple:
+        def _simple_gen():
+            yield f"data: {json.dumps({'chunk': simple})}\n\n"
+            yield "data: [DONE]\n\n"
+        return StreamingResponse(_simple_gen(), media_type="text/event-stream")
+
+    history = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    def generate():
+        try:
+            for chunk in get_recommendation_stream(
+                history,
+                request.user_message,
+                _product_manager,
+                is_beginner=request.is_beginner,
+            ):
+                yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            yield f"data: {json.dumps({'error': str(exc)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")

@@ -111,6 +111,13 @@ _PRICE_FEEDBACK_KEYWORDS = re.compile(
 _PRICE_NUMBER = re.compile(r"\$\s*\d+|\d+\s*dollars?|\d+\s*bucks?", re.IGNORECASE)
 _ASSISTANT_PRICE_LINE = re.compile(r"(?<!\w)\*{0,2}Price\*{0,2}:?\*{0,2}\s*\$(\d+(?:\.\d+)?)", re.IGNORECASE)
 
+_STRENGTH_FEEDBACK_KEYWORDS = re.compile(
+    r"\b(too strong|too potent|too high|too intense|something lighter|something milder|"
+    r"lighter|milder|less potent|less strong|not as strong|lower thc|tone it down)\b",
+    re.IGNORECASE,
+)
+_ASSISTANT_THC_LINE = re.compile(r"\bTHC[:\s]*(\d+(?:\.\d+)?)\s*%", re.IGNORECASE)
+
 _GENERIC_REJECTION_PATTERNS = re.compile(
     r"\b(don'?t (really |particularly )?(like|want|need) any( of these)?|"
     r"none of these|not (really |quite )?(what i('?m| was) looking for|right|what i want)|"
@@ -210,9 +217,40 @@ def is_generic_rejection_query(user_message: str) -> bool:
     return bool(_GENERIC_REJECTION_PATTERNS.search(user_message))
 
 
+def is_strength_feedback_query(user_message: str, history: list[dict]) -> bool:
+    """
+    Return True when the user says something is too strong/potent AFTER concrete
+    recommendations (with THC%) were already made in the conversation.
+    """
+    if not _STRENGTH_FEEDBACK_KEYWORDS.search(user_message):
+        return False
+    # Must have prior assistant recommendations with THC levels
+    for msg in history:
+        if msg.get("role") == "assistant" and _ASSISTANT_THC_LINE.search(msg.get("content", "")):
+            return True
+    return False
+
+
+def derive_lower_thc_cap(history: list[dict]) -> float | None:
+    """Derive a THC cap ~20% below the lowest THC in previous assistant recommendations."""
+    thc_values: list[float] = []
+    for msg in history:
+        if msg.get("role") != "assistant":
+            continue
+        for val in _ASSISTANT_THC_LINE.findall(msg.get("content", "")):
+            thc_values.append(float(val))
+    if not thc_values:
+        return None
+    lowest = min(thc_values)
+    if lowest <= 1:
+        return None
+    return round(lowest * 0.8, 1)
+
+
 def is_vape_hardware_unknown_query(user_message: str, history: list[dict]) -> bool:
     """
-    Return True if vape form is known but hardware type (disposable/510/pod/cartridge) is unspecified.
+    Return True if vape form is known but hardware type (disposable/510/pod/cartridge) is unspecified
+    AND no strain or effect signal is present (i.e. user gave zero other context).
     Used to force LLM to ask hardware question before searching.
     Only checks USER messages for vape intent — ignores assistant messages that may offer vaping as an option.
     """
@@ -228,6 +266,10 @@ def is_vape_hardware_unknown_query(user_message: str, history: list[dict]) -> bo
     # Hardware keyword can appear anywhere (user or assistant)
     all_text = user_message + " " + " ".join(msg.get("content", "") for msg in history)
     if _VAPE_HARDWARE_KEYWORDS.search(all_text):
+        return False
+    # If strain type OR effect is already known, we have enough to search without hardware type.
+    # smart_search handles Vaporizers without needing disposable vs cartridge distinction.
+    if _STRAIN_TYPES.search(all_text) or _EFFECT_KEYWORDS.search(user_text):
         return False
     return True
 
@@ -359,13 +401,22 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
     form_known = bool(_FORM_KEYWORDS.search(user_message)) or bool(_FORM_KEYWORDS.search(all_history_text))
     if _NEGATIVE_STRENGTH_CONSTRAINT.search(user_message) and form_known:
         return "required"
+    # Form + strain/effect in same message → enough info to search immediately
+    if _FORM_KEYWORDS.search(user_message) and (
+        _STRAIN_TYPES.search(user_message) or _EFFECT_KEYWORDS.search(user_message)
+    ):
+        return "required"
+    # Strain confirmation (e.g. "sativa") when form is already known from history → search now
+    if _STRAIN_TYPES.search(user_message) and form_known and len(user_message.strip().split()) <= 4:
+        return "required"
     return "auto"
 
 
 # ── Session profile extraction ─────────────────────────────────────────────────
 
 _BEGINNER_SIGNALS = re.compile(
-    r"\b(first time|never tried|new to (this|cannabis|weed)|beginner|novice|"
+    r"\b(first time|never tried|never smoked|never used|never consumed|"
+    r"new to (this|cannabis|weed)|beginner|novice|"
     r"low tolerance|don'?t (smoke|use) much|my mom|my dad|my grandma|my grandpa)\b",
     re.IGNORECASE,
 )
