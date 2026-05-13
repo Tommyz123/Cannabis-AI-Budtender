@@ -1,15 +1,20 @@
 /**
- * AI Budtender Chat Widget
- * Manages session, conversation history, API calls, and UI rendering.
+ * AI Budtender Chat — Module 5 (minimal) version.
+ *
+ * Module 6 will refactor this file to consume ui_action and wire chip-×.
+ * This version only:
+ *   - reads new two-pane DOM IDs (chat is always visible in right pane)
+ *   - keeps API call shape identical to pre-Module-5 behavior
+ *   - drops the floating trigger / close button entirely
+ *   - relies on API_BASE from placeholders.js (loaded earlier)
  */
 
-const API_BASE = "http://localhost:8000";
 const MAX_HISTORY = 20;
 
-// ── Session state ─────────────────────────────────────────────────────────────
+// ── Session state ────────────────────────────────────────────────────────────
 
 let sessionId = generateUUID();
-let conversationHistory = [];  // Array of {role, content} objects
+let conversationHistory = []; // Array of {role, content} objects
 let isSending = false;
 
 function generateUUID() {
@@ -20,40 +25,43 @@ function generateUUID() {
   });
 }
 
-// ── DOM references ────────────────────────────────────────────────────────────
+// ── DOM references (new two-pane IDs) ────────────────────────────────────────
 
-const trigger = document.getElementById("budtender-trigger");
-const container = document.getElementById("budtender-container");
-const closeBtn = document.getElementById("budtender-close");
-const messagesEl = document.getElementById("budtender-messages");
-const inputEl = document.getElementById("budtender-input");
-const sendBtn = document.getElementById("budtender-send");
+let messagesEl = null;
+let inputEl = null;
+let sendBtn = null;
 
-// ── UI toggle ─────────────────────────────────────────────────────────────────
+function bindDOM() {
+  messagesEl = document.getElementById("budtender-messages");
+  inputEl = document.getElementById("budtender-input");
+  sendBtn = document.getElementById("budtender-send");
 
-trigger.addEventListener("click", () => {
-  container.classList.toggle("hidden");
-  if (!container.classList.contains("hidden")) {
-    inputEl.focus();
+  if (sendBtn) sendBtn.addEventListener("click", sendMessage);
+  if (inputEl) {
+    inputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
   }
-});
 
-closeBtn.addEventListener("click", () => {
-  container.classList.add("hidden");
-});
+  renderWelcome();
+}
 
-// ── Send message ──────────────────────────────────────────────────────────────
+function renderWelcome() {
+  if (!messagesEl) return;
+  if (messagesEl.children.length > 0) return;
+  appendMessage(
+    "ai",
+    "Hey there! 👋 Welcome! I'm your AI Budtender — here to help you find something that's just right for you today. What brings you in?"
+  );
+}
 
-sendBtn.addEventListener("click", sendMessage);
-
-inputEl.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-});
+// ── Send message ─────────────────────────────────────────────────────────────
 
 async function sendMessage() {
+  if (!inputEl) return;
   const text = inputEl.value.trim();
   if (!text || isSending) return;
 
@@ -79,18 +87,16 @@ async function sendMessage() {
   }
 }
 
-// ── History management ────────────────────────────────────────────────────────
+// ── History management ───────────────────────────────────────────────────────
 
 function addToHistory(role, content) {
   conversationHistory.push({ role, content });
-
-  // Keep within MAX_HISTORY by removing oldest pair when over limit
   while (conversationHistory.length > MAX_HISTORY) {
-    conversationHistory.splice(0, 2);  // Remove oldest user+assistant pair
+    conversationHistory.splice(0, 2);
   }
 }
 
-// ── API call ──────────────────────────────────────────────────────────────────
+// ── API call ─────────────────────────────────────────────────────────────────
 
 async function callChatAPI(userMessage) {
   const payload = {
@@ -114,7 +120,7 @@ async function callChatAPI(userMessage) {
   return data.reply;
 }
 
-// ── DOM helpers ───────────────────────────────────────────────────────────────
+// ── DOM helpers ──────────────────────────────────────────────────────────────
 
 function renderMarkdown(text) {
   return text
@@ -126,6 +132,7 @@ function renderMarkdown(text) {
 }
 
 function appendMessage(role, text) {
+  if (!messagesEl) return;
   const el = document.createElement("div");
   el.className = `message ${role}`;
   if (role === "ai") {
@@ -138,6 +145,7 @@ function appendMessage(role, text) {
 }
 
 function showTypingIndicator() {
+  if (!messagesEl) return { remove() {} };
   const el = document.createElement("div");
   el.className = "typing-indicator";
   el.innerHTML = "<span></span><span></span><span></span>";
@@ -147,12 +155,21 @@ function showTypingIndicator() {
 }
 
 function scrollToBottom() {
+  if (!messagesEl) return;
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 function setInputEnabled(enabled) {
   isSending = !enabled;
-  inputEl.disabled = !enabled;
-  sendBtn.disabled = !enabled;
-  if (enabled) inputEl.focus();
+  if (inputEl) inputEl.disabled = !enabled;
+  if (sendBtn) sendBtn.disabled = !enabled;
+  if (enabled && inputEl) inputEl.focus();
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bindDOM);
+} else {
+  bindDOM();
 }

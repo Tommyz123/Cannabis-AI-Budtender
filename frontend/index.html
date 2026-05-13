@@ -3,54 +3,60 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AI Budtender</title>
+  <title>Verdant — AI Budtender</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<!-- Demo page background -->
-<div style="padding:40px; font-family:sans-serif; color:#333; max-width:700px; margin:0 auto;">
-  <h1>🌿 AI Budtender Demo</h1>
-  <p>Click the green button in the bottom-right corner to chat with the AI Budtender.</p>
-  <p style="color:#888; font-size:14px;">
-    The widget connects to the FastAPI backend running at <code>http://localhost:8000</code>.
-    Make sure the backend is running before chatting.
-  </p>
-</div>
+<header id="app-header">
+  <h1>🌿 Verdant</h1>
+  <div class="header-right">
+    <span class="age-badge">21+ ✓</span>
+    <button id="cart-trigger" aria-label="Open cart">
+      🛒 <span id="cart-count">0</span>
+    </button>
+  </div>
+</header>
 
-<!-- ── Floating trigger button ── -->
-<button id="budtender-trigger" aria-label="Open AI Budtender chat">🌿</button>
+<main class="layout">
 
-<!-- ── Chat container ── -->
-<div id="budtender-container" class="hidden" role="dialog" aria-label="AI Budtender chat">
+  <section id="product-pane" aria-label="Products">
+    <div id="filter-chips" aria-label="Active filters"></div>
+    <div id="result-meta" aria-live="polite">Showing 217 of 217</div>
 
-  <div id="budtender-header">
-    <div>
-      <div class="header-title">AI Budtender</div>
-      <div class="header-sub">Here to help you find the right product</div>
+    <section id="top-pick-row" hidden>
+      <h2 class="pick-row-title">✨ AI's Top Pick for You</h2>
+      <div id="top-pick-cards"></div>
+    </section>
+
+    <div id="product-grid" role="list"></div>
+  </section>
+
+  <aside id="chat-pane" aria-label="Chat">
+    <div id="chat-pane-header">
+      <div class="chat-pane-title">AI Budtender</div>
+      <div class="chat-pane-sub">Here to help you find the right product</div>
     </div>
-    <button id="budtender-close" aria-label="Close chat">&times;</button>
-  </div>
-
-  <div id="budtender-messages" role="log" aria-live="polite">
-    <div class="message ai">
-      Hey there! 👋 Welcome! I'm your AI Budtender — here to help you find something that's just right for you today. What brings you in?
+    <div id="budtender-messages" role="log" aria-live="polite"></div>
+    <div id="budtender-input-area">
+      <input
+        id="budtender-input"
+        type="text"
+        placeholder="Ask me anything..."
+        aria-label="Your message"
+        autocomplete="off"
+      />
+      <button id="budtender-send" aria-label="Send message">Send</button>
     </div>
-  </div>
+  </aside>
 
-  <div id="budtender-input-area">
-    <input
-      id="budtender-input"
-      type="text"
-      placeholder="Ask me anything..."
-      aria-label="Your message"
-      autocomplete="off"
-    />
-    <button id="budtender-send" aria-label="Send message">&#9658;</button>
-  </div>
+</main>
 
-</div>
+<aside id="cart-drawer" hidden aria-label="Cart contents"></aside>
 
+<script src="placeholders.js"></script>
+<script src="cart.js"></script>
+<script src="product-grid.js"></script>
 <script src="chat.js"></script>
 </body>
 </html>
