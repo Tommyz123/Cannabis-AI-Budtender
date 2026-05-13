@@ -176,6 +176,7 @@ def _run_fast_path(
     messages: list[dict],
     search_params: dict,
     product_manager,
+    trace: dict | None = None,
 ) -> str | None:
     """
     Fast path: skip Call 1 by injecting a synthetic tool call + result, then
@@ -183,11 +184,24 @@ def _run_fast_path(
 
     Returns the reply string, or None if anything goes wrong (caller falls back
     to the standard agent loop).
+
+    If `trace` is provided, records the search invocation under
+    `trace["last_smart_search"]` BEFORE the LLM call so that even on LLM
+    failure the trace reflects what was searched.
     """
     import uuid
 
     try:
         search_result = product_manager.search_products(**search_params)
+
+        # Record the search in trace BEFORE the LLM call — so even if the LLM
+        # call below raises, the caller can still surface what we matched.
+        if trace is not None:
+            trace["last_smart_search"] = {
+                "args": dict(search_params),
+                "result": search_result,
+            }
+
         fake_call_id = f"call_{uuid.uuid4().hex[:12]}"
 
         # Inject synthetic Call-1 assistant message
@@ -228,9 +242,14 @@ def _run_agent_loop(
     messages: list[dict],
     tool_choice: str,
     product_manager,
+    trace: dict | None = None,
 ) -> str:
     """
     Execute the Agent Loop: LLM call → tool execution → repeat until final answer.
+
+    If `trace` is provided, every successful (non-duplicate) smart_search call
+    is recorded under `trace["last_smart_search"]`. Multiple smart_search calls
+    in a single turn leave only the most recent successful one in trace.
 
     Raises:
         RuntimeError: If the API call fails.
@@ -274,6 +293,17 @@ def _run_agent_loop(
                     smart_search_executed = True
                     if result.get("total", 0) > 0:
                         search_had_results = True
+                    # Record into trace (parse the same args execute_tool_call
+                    # parsed internally — execute_tool_call doesn't return them).
+                    if trace is not None:
+                        try:
+                            parsed_args = json.loads(tool_call.function.arguments)
+                        except (json.JSONDecodeError, TypeError):
+                            parsed_args = {}
+                        trace["last_smart_search"] = {
+                            "args": parsed_args,
+                            "result": result,
+                        }
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -439,6 +469,8 @@ def get_recommendation(
     user_message: str,
     product_manager,  # ProductManager instance
     is_beginner: bool = False,
+    *,
+    trace: dict | None = None,
 ) -> str:
     """
     Run the Agent Loop: call LLM → execute tool calls → call LLM again until done.
@@ -451,6 +483,15 @@ def get_recommendation(
         history: Previous messages as list of {role, content} dicts.
         user_message: Current user message text.
         product_manager: ProductManager instance for tool execution.
+        is_beginner: Whether the customer is flagged as a beginner.
+        trace: Optional out-param dict. When provided, the function populates
+            it as a side channel with two keys:
+              - `profile`: the extracted profile signals
+              - `last_smart_search`: `{"args": dict, "result": dict}` for the
+                most recent successful smart_search this turn (fast-path or
+                agent-loop). Absent when no smart_search ran.
+            Existing callers that omit `trace` are unaffected — return type
+            remains `str`.
 
     Returns:
         Final assistant reply text.
@@ -459,6 +500,10 @@ def get_recommendation(
         RuntimeError: If the API call fails.
     """
     profile = extract_profile_signals(user_message, history)
+    if trace is not None:
+        # Side-channel: stash profile so the ui_action_builder can reuse it
+        # without re-running the (non-trivial) extraction.
+        trace["profile"] = profile
     if not is_beginner and profile.get("experience_level") == "beginner":
         is_beginner = True
     tool_choice = determine_tool_choice(user_message, history)
@@ -476,9 +521,15 @@ def get_recommendation(
                 if thc_cap is not None:
                     fast_params["max_thc"] = thc_cap
             logger.info("[FastPath] params=%s", fast_params)
-            result = _run_fast_path(_openai_client, list(messages), fast_params, product_manager)
+            result = _run_fast_path(
+                _openai_client, list(messages), fast_params, product_manager,
+                trace=trace,
+            )
             if result:
                 return result
             logger.info("[FastPath] failed or empty, falling back to agent loop")
 
-    return _run_agent_loop(_openai_client, messages, tool_choice, product_manager)
+    return _run_agent_loop(
+        _openai_client, messages, tool_choice, product_manager,
+        trace=trace,
+    )
