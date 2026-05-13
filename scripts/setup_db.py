@@ -36,7 +36,9 @@ def setup_db():
             unit_weight         TEXT,
             pack_size           INTEGER,
             description         TEXT,
-            attributes          TEXT
+            attributes          TEXT,
+            is_on_sale          INTEGER DEFAULT 0,
+            discount_pct        INTEGER DEFAULT 0
         );
 
         CREATE INDEX IF NOT EXISTS idx_category        ON products(category);
@@ -53,6 +55,19 @@ def setup_db():
             updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     """)
+
+    # Backfill sale columns on pre-existing DBs that were created before these
+    # columns were added. Each ALTER is wrapped to ignore "duplicate column"
+    # errors so the script remains idempotent.
+    for ddl in (
+        "ALTER TABLE products ADD COLUMN is_on_sale INTEGER DEFAULT 0",
+        "ALTER TABLE products ADD COLUMN discount_pct INTEGER DEFAULT 0",
+    ):
+        try:
+            cur.execute(ddl)
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
 
     con.commit()
     con.close()
