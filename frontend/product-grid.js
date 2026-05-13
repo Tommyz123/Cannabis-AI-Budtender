@@ -316,11 +316,11 @@ const ProductGrid = (() => {
   // ── Click delegation ────────────────────────────────────────────────
 
   function wireGridClicks() {
-    // Add-to-cart from grid and pick row
     document.addEventListener("click", (e) => {
       const t = e.target;
       if (!(t instanceof HTMLElement)) return;
 
+      // Add-to-cart from grid and pick row
       if (t.classList.contains("add-btn")) {
         const id = Number(t.getAttribute("data-id"));
         if (Number.isFinite(id) && window.Cart) {
@@ -328,6 +328,21 @@ const ProductGrid = (() => {
           // Brief visual pulse on the button
           t.classList.add("added");
           setTimeout(() => t.classList.remove("added"), 600);
+        }
+        return;
+      }
+
+      // Filter chip × removal — bubble up from inner span to the button
+      const chipBtn = t.closest(".filter-chip");
+      if (chipBtn instanceof HTMLElement) {
+        const field = chipBtn.getAttribute("data-field");
+        const value = chipBtn.getAttribute("data-value");
+        if (field && value !== null) {
+          window.dispatchEvent(
+            new CustomEvent("filter-chip-removed", {
+              detail: { field, value },
+            })
+          );
         }
       }
     });
