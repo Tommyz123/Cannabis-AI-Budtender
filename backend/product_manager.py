@@ -10,6 +10,7 @@ import sqlite3
 import pandas as pd
 
 from backend.config import DB_PATH, BEGINNER_THC_LIMITS
+from backend.pick_scoring import score_picks as _score_picks_fn, thc_numeric
 
 # THC unit is determined by category (not stored in DB)
 THC_UNIT_BY_CATEGORY: dict[str, str] = {
@@ -69,6 +70,20 @@ def _row_to_compact(row: pd.Series) -> dict:
     pk = row.get("pack_size")
     if pk is not None and not pd.isna(pk):
         record["pk"] = str(int(pk))
+
+    # Optional sale fields: include only when product is flagged as on-sale.
+    sale_flag = row.get("is_on_sale")
+    if sale_flag is not None and pd.notna(sale_flag) and sale_flag:
+        disc_raw = row.get("discount_pct")
+        if disc_raw is not None and pd.notna(disc_raw):
+            disc = int(disc_raw)
+            if disc > 0:
+                record["sale"] = True
+                record["disc"] = disc
+                price_val = record.get("p", 0.0) or 0.0
+                # Reconstruct the original (pre-discount) price so the UI can
+                # display a strikethrough "original" alongside the sale price.
+                record["op"] = round(price_val / (1 - disc / 100), 2)
     return record
 
 
@@ -89,6 +104,7 @@ class ProductManager:
         self._df: pd.DataFrame = pd.DataFrame()
         self._category_index: dict[str, pd.DataFrame] = {}
         self._all_compact_json: str = "[]"
+        self._pick_meta: dict[int, dict] = {}
 
     def load(self, db_path: str = DB_PATH) -> None:
         """Load products from SQLite and build all indexes."""
@@ -105,6 +121,86 @@ class ProductManager:
         self._df = df
         self._build_category_index()
         self._all_compact_json = self._generate_compact_json(df)
+        self._pick_meta = self._build_pick_meta(df)
+
+    def _build_pick_meta(self, df: pd.DataFrame) -> dict[int, dict]:
+        """Pre-compute per-product metadata used by score_picks.
+
+        Built once at load time so per-call scoring is O(N) over the
+        already-filtered candidate list.
+        """
+        meta: dict[int, dict] = {}
+        for _, row in df.iterrows():
+            pid = int(row["id"])
+            # Parse effects string into a set for fast intersection checks.
+            effects_raw = row.get("effects")
+            if effects_raw is None or pd.isna(effects_raw):
+                effects_set: set[str] = set()
+            else:
+                effects_set = {
+                    tok.strip() for tok in str(effects_raw).split(",") if tok.strip()
+                }
+
+            # THC numeric extraction (None for missing / zero / malformed).
+            level = row.get("thc_level")
+            unit = row.get("thc_unit") or ""
+            thc_val: float | None = None
+            if level is not None and not pd.isna(level):
+                try:
+                    parsed = float(level)
+                    if parsed > 0:
+                        thc_val = parsed
+                except (TypeError, ValueError):
+                    thc_val = None
+
+            price = row.get("price")
+            price_val: float | None = None
+            if price is not None and not pd.isna(price):
+                try:
+                    price_val = float(price)
+                except (TypeError, ValueError):
+                    price_val = None
+
+            price_per_thc: float | None = None
+            if thc_val is not None and price_val is not None and thc_val > 0:
+                price_per_thc = price_val / thc_val
+
+            is_on_sale = False
+            sale_flag = row.get("is_on_sale")
+            if sale_flag is not None and pd.notna(sale_flag):
+                is_on_sale = bool(sale_flag)
+
+            disc_pct = 0
+            disc_raw = row.get("discount_pct")
+            if disc_raw is not None and pd.notna(disc_raw):
+                try:
+                    disc_pct = int(disc_raw)
+                except (TypeError, ValueError):
+                    disc_pct = 0
+
+            price_range = row.get("price_range")
+            is_premium = (
+                price_range is not None
+                and not pd.isna(price_range)
+                and str(price_range) == "Premium"
+            )
+
+            experience_level = row.get("experience_level")
+            if experience_level is None or pd.isna(experience_level):
+                experience_level = ""
+            else:
+                experience_level = str(experience_level)
+
+            meta[pid] = {
+                "is_on_sale": is_on_sale,
+                "discount_pct": disc_pct,
+                "is_premium": is_premium,
+                "price_per_thc": price_per_thc,
+                "thc_unit": unit if thc_val is not None else "",
+                "effects_set": effects_set,
+                "experience_level": experience_level,
+            }
+        return meta
 
     def _build_category_index(self) -> None:
         """Build a dict mapping category name → filtered DataFrame."""
@@ -139,6 +235,27 @@ class ProductManager:
     def get_all_compact_json(self) -> str:
         """Return pre-generated compact JSON for all products."""
         return self._all_compact_json
+
+    def get_all_compact_list(self) -> list[dict]:
+        """Return all products as a list of compact dicts.
+
+        Parallel to `get_all_compact_json` but returns the list directly.
+        Used by the `/products` endpoint introduced in Module 4.
+        """
+        return [_row_to_compact(row) for _, row in self._df.iterrows()]
+
+    def score_picks(
+        self,
+        filtered: list[dict],
+        profile: dict,
+        limit: int = 3,
+    ) -> list[dict]:
+        """Rank `filtered` products and return up to `limit` Top Picks.
+
+        Delegates to `pick_scoring.score_picks` using the pre-computed
+        `_pick_meta`.  Each returned dict carries a `pick_reason` string.
+        """
+        return _score_picks_fn(filtered, self._pick_meta, profile, limit=limit)
 
     def get_beginner_compact_json(self) -> str:
         """
