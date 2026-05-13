@@ -71,7 +71,16 @@ def _row_to_compact(row: pd.Series) -> dict:
     if pk is not None and not pd.isna(pk):
         record["pk"] = str(int(pk))
 
-    # Optional sale fields: include only when product is flagged as on-sale.
+    # Sale fields (demo / mock data).
+    #
+    # `is_on_sale` and `discount_pct` are populated by scripts/seed_sale_data.py
+    # — randomly assigned to ~20% of products with RNG_SEED=42. Surfacing
+    # them as a SALE badge is fine for demo/testing; production must wire
+    # in a real promotions data source before going live.
+    #
+    # We intentionally do NOT emit a reconstructed "original" price (`op`):
+    # the DB only stores the actual selling price, and inventing a
+    # pre-discount price for a strikethrough is misleading.
     sale_flag = row.get("is_on_sale")
     if sale_flag is not None and pd.notna(sale_flag) and sale_flag:
         disc_raw = row.get("discount_pct")
@@ -80,10 +89,6 @@ def _row_to_compact(row: pd.Series) -> dict:
             if disc > 0:
                 record["sale"] = True
                 record["disc"] = disc
-                price_val = record.get("p", 0.0) or 0.0
-                # Reconstruct the original (pre-discount) price so the UI can
-                # display a strikethrough "original" alongside the sale price.
-                record["op"] = round(price_val / (1 - disc / 100), 2)
     return record
 
 
@@ -165,6 +170,10 @@ class ProductManager:
             if thc_val is not None and price_val is not None and thc_val > 0:
                 price_per_thc = price_val / thc_val
 
+            # Sale meta (demo data from scripts/seed_sale_data.py).
+            # Used by pick_scoring to boost on-sale products to Tier 1/2
+            # with reasons like "25% off this week". Replace with a real
+            # promotions source before production launch.
             is_on_sale = False
             sale_flag = row.get("is_on_sale")
             if sale_flag is not None and pd.notna(sale_flag):

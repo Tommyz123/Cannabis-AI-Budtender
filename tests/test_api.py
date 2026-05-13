@@ -119,7 +119,7 @@ def test_cors_headers(client):
 
 
 def test_get_products(client):
-    """Verify GET /products returns 217 products including sale fields on some."""
+    """Verify GET /products returns 217 products with sale + disc (demo data)."""
     response = client.get("/products")
     assert response.status_code == 200
     data = response.json()
@@ -127,9 +127,16 @@ def test_get_products(client):
     assert "total" in data
     assert data["total"] == 217
     assert len(data["products"]) == 217
-    # At least 1 of the first 50 products should carry the optional sale fields.
-    has_sale_field = any(p.get("sale") for p in data["products"][:50])
-    assert has_sale_field, "Expected at least one product in the first 50 to be on sale"
+    # The seeder marks ~20% of products on-sale. The API surfaces `sale`
+    # and `disc` fields for those, but never fabricates an `op` (original
+    # price) — that would require a real pre-discount price in the DB.
+    sale_items = [p for p in data["products"] if p.get("sale")]
+    assert len(sale_items) > 0, "Expected some products on sale (demo data)"
+    for p in sale_items:
+        assert p["sale"] is True
+        assert isinstance(p["disc"], int) and p["disc"] > 0
+    for p in data["products"]:
+        assert "op" not in p, "API must not fabricate a pre-discount price"
 
 
 def test_chat_includes_ui_action_on_search(client):

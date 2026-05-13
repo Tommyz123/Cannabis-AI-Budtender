@@ -88,13 +88,17 @@ def flow_a_cold_load(base: str) -> bool:
     total = data.get("total", 0)
     products = data.get("products", [])
     sale_count = sum(1 for p in products if p.get("sale"))
-    has_op = any("op" in p for p in products if p.get("sale"))
-    ok = total == 217 and len(products) == 217 and sale_count >= 1 and has_op
-    print(f"  total={total}, sale_count={sale_count}, has_op_field={has_op}")
+    has_disc = all("disc" in p for p in products if p.get("sale"))
+    has_no_op = all("op" not in p for p in products)
+    ok = total == 217 and len(products) == 217 and sale_count >= 1 and has_disc and has_no_op
+    print(
+        f"  total={total}, sale_count={sale_count}, disc_on_each_sale={has_disc}, "
+        f"no_fabricated_op={has_no_op}"
+    )
     if ok:
         print(PASS("  Flow A"))
     else:
-        print(FAIL("  Flow A — expected total=217, sale_count>=1, has_op=True"))
+        print(FAIL("  Flow A — expected total=217, sale_count>=1, disc on every sale item, no op"))
     return ok
 
 

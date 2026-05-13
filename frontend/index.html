@@ -29,7 +29,17 @@
       <div id="top-pick-cards"></div>
     </section>
 
+    <h2 id="grid-title" class="grid-title" hidden>More products that match</h2>
     <div id="product-grid" role="list"></div>
+
+    <!-- Product detail modal -->
+    <div id="product-modal" class="modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-backdrop" data-modal-close></div>
+      <div class="modal-content" role="document">
+        <button class="modal-close" aria-label="Close" data-modal-close>✕</button>
+        <div id="modal-body"></div>
+      </div>
+    </div>
   </section>
 
   <aside id="chat-pane" aria-label="Chat">

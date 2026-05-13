@@ -307,3 +307,18 @@ function setInputEnabled(enabled) {
   if (sendBtn) sendBtn.disabled = !enabled;
   if (enabled && inputEl) inputEl.focus();
 }
+
+// ── Public API for other modules (e.g. product detail modal) ─────────────────
+
+window.Chat = {
+  /**
+   * Programmatically send a user message to the budtender.
+   * Behaves identically to typing the text and pressing Send.
+   */
+  ask(text) {
+    const t = String(text || "").trim();
+    if (!t || isSending) return false;
+    sendMessage(t);
+    return true;
+  },
+};
