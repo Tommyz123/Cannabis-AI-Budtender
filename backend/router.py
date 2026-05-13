@@ -137,6 +137,33 @@ def is_vague_query(user_message: str) -> bool:
     return bool(_VAGUE_PATTERNS.match(user_message))
 
 
+def is_form_only_query(user_message: str, history: list[dict]) -> bool:
+    """Return True when the customer gave a form keyword and nothing else.
+
+    This is the SHOWROOM-mode trigger: form known + effect/scenario/strain
+    unknown. We force the LLM to call smart_search immediately so the
+    customer sees a starter variety instead of getting an abstract
+    "what experience are you after?" question with no products in view.
+
+    Mutually exclusive with `is_form_unknown_query` (which fires when an
+    effect IS present but form is missing).
+    """
+    if not _FORM_KEYWORDS.search(user_message):
+        return False
+    # Any effect/strain hint in current message means it's not form-only
+    if _EFFECT_KEYWORDS.search(user_message) or _STRAIN_TYPES.search(user_message):
+        return False
+    # Effect/strain already established in history → both signals present,
+    # standard HARD GATE path applies, not SHOWROOM
+    for msg in history:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content", "") or ""
+        if _EFFECT_KEYWORDS.search(content) or _STRAIN_TYPES.search(content):
+            return False
+    return True
+
+
 def is_form_unknown_query(user_message: str, history: list[dict]) -> bool:
     """
     Return True if the user mentions an effect but no product form,
@@ -385,6 +412,13 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
     if is_occasion_ready_query(user_message, history):
         return "required"
     if is_form_confirmation_query(user_message, history):
+        return "required"
+    # Form-only (no effect/strain anywhere) → SHOWROOM mode: force a
+    # smart_search so the customer sees a starter variety before being
+    # asked for narrowing details. This must run BEFORE
+    # is_form_unknown_query / is_vape_hardware_unknown_query so it isn't
+    # accidentally tagged as effect-unknown ⇒ "none".
+    if is_form_only_query(user_message, history):
         return "required"
     if is_form_unknown_query(user_message, history):
         return "none"

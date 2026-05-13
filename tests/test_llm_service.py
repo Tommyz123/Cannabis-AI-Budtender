@@ -451,5 +451,7 @@ def test_information_gathering_prompt_includes_showroom_rule():
     assert "sub-type" in INFORMATION_GATHERING_PROMPT.lower()
     assert "indica" in INFORMATION_GATHERING_PROMPT.lower()
     assert "sativa" in INFORMATION_GATHERING_PROMPT.lower()
-    # The old "ask only" anti-pattern must be marked forbidden
-    assert "without showing any products" in INFORMATION_GATHERING_PROMPT
+    # The HARD GATE escalation: form-only must force a tool call, not let
+    # the LLM fall back to the abstract "ask only" pattern.
+    assert "HARD GATE — Form known" in INFORMATION_GATHERING_PROMPT
+    assert "SHOW first" in INFORMATION_GATHERING_PROMPT
