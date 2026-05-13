@@ -252,3 +252,239 @@ def test_chat_removed_filters_empty_user_message_still_400_when_both_empty(clien
         },
     )
     assert response.status_code == 400
+
+
+# ── GET /filters — filter-sidebar metadata ────────────────────────────────
+
+def test_get_filters_endpoint_returns_complete_metadata(client):
+    """Verify GET /filters returns categories, brands, strain_types, effects,
+    ranges, and on_sale_count — everything the storefront sidebar needs.
+    """
+    response = client.get("/filters")
+    assert response.status_code == 200
+    data = response.json()
+    for key in (
+        "categories", "brands", "strain_types", "effects",
+        "price_range", "thc_pct_range", "thc_mg_range",
+        "on_sale_count", "total",
+    ):
+        assert key in data, f"missing key: {key}"
+
+    assert data["total"] == 217
+    assert len(data["categories"]) == 8  # Flower / Vape / Edibles / etc.
+    assert len(data["strain_types"]) >= 3  # Indica / Sativa / Hybrid at minimum
+
+    # Categories are sorted by descending count (most populous first).
+    counts = [c["count"] for c in data["categories"]]
+    assert counts == sorted(counts, reverse=True), "categories must be sorted desc by count"
+
+    # Each filter item carries name + count.
+    for cat in data["categories"]:
+        assert isinstance(cat["name"], str) and cat["name"]
+        assert isinstance(cat["count"], int) and cat["count"] >= 0
+
+    # Price/THC ranges are well-formed floats.
+    pr = data["price_range"]
+    assert pr["min"] >= 0 and pr["max"] >= pr["min"]
+
+
+# ── /chat with manual_filters ─────────────────────────────────────────────
+
+def test_chat_injects_manual_filters_as_system_signal(client):
+    """Sidebar state in `manual_filters` becomes a low-priority system message.
+
+    Distinct from `removed_filters` (which forces an LLM acknowledgment):
+    `manual_filters` is passive context — the AI should be aware of the
+    sidebar narrowing but not announce it back to the customer.
+    """
+    captured = {}
+
+    def fake_get_recommendation(history, user_message, product_manager, **kwargs):
+        captured["history"] = history
+        return "Sure, here's a recommendation."
+
+    with patch("backend.main.get_recommendation", side_effect=fake_get_recommendation):
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "test-mf",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "what do you have?",
+                "manual_filters": {
+                    "category": "Flower",
+                    "strain_type": ["Sativa"],
+                    "on_sale": True,
+                },
+            },
+        )
+    assert response.status_code == 200
+
+    # The injected system message should describe the sidebar state and
+    # explicitly NOT pose as a user message.
+    signals = [
+        msg for msg in captured["history"]
+        if msg.get("role") == "system" and "[UI CONTEXT]" in msg.get("content", "")
+    ]
+    assert len(signals) == 1, f"expected 1 manual_filters signal, got {signals}"
+    content = signals[0]["content"]
+    assert "category=Flower" in content
+    assert "strain_type=Sativa" in content
+    assert "on_sale=True" in content
+
+
+def test_chat_skips_manual_filters_injection_when_empty(client):
+    """No `manual_filters` payload → no UI CONTEXT system message added."""
+    captured = {}
+
+    def fake_get_recommendation(history, user_message, product_manager, **kwargs):
+        captured["history"] = history
+        return "Hi!"
+
+    with patch("backend.main.get_recommendation", side_effect=fake_get_recommendation):
+        client.post(
+            "/chat",
+            json={
+                "session_id": "test-no-mf",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "What do you have?",
+            },
+        )
+
+    assert not any(
+        "[UI CONTEXT]" in msg.get("content", "")
+        for msg in captured["history"]
+    )
+
+
+# ── /chat with compare_product_ids ────────────────────────────────────────
+
+def test_chat_injects_compare_by_id_signal(client):
+    """`compare_product_ids: [a, b, c]` injects a COMPARE_BY_ID system message
+    that instructs the LLM to use get_product_details, not smart_search.
+    """
+    captured = {}
+
+    def fake_get_recommendation(history, user_message, product_manager, **kwargs):
+        captured["history"] = history
+        return "Comparison coming up."
+
+    with patch("backend.main.get_recommendation", side_effect=fake_get_recommendation):
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "test-cmp",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "Please compare these products: A, B, C.",
+                "compare_product_ids": [101, 202, 303],
+            },
+        )
+
+    assert response.status_code == 200
+    signals = [
+        msg for msg in captured["history"]
+        if msg.get("role") == "system" and "COMPARE_BY_ID:" in msg.get("content", "")
+    ]
+    assert len(signals) == 1, f"expected 1 compare-by-id signal, got {signals}"
+    content = signals[0]["content"]
+    # All three IDs must appear and instruct get_product_details usage.
+    assert "101" in content and "202" in content and "303" in content
+    assert "get_product_details" in content
+    # Must explicitly tell the LLM not to use smart_search this turn.
+    assert "smart_search" in content.lower()
+
+
+# ── /chat/stream — typed SSE protocol ─────────────────────────────────────
+
+def test_chat_stream_simple_greeting_emits_one_chunk_and_done(client):
+    """Greeting fast path: single chunk + [DONE], no ui_action/spoken events."""
+    response = client.post(
+        "/chat/stream",
+        json={
+            "session_id": "stream-greet",
+            "messages": [],
+            "is_beginner": False,
+            "user_message": "hi",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("content-type", "").startswith("text/event-stream")
+    body = response.text
+    assert "data: {" in body  # at least one chunk event
+    assert "data: [DONE]" in body
+    assert "event: ui_action" not in body  # no smart_search → no ui_action
+    assert "event: spoken" not in body
+
+
+def test_chat_stream_emits_ui_action_when_search_runs(client):
+    """When the LLM stream resolves a smart_search via trace, the endpoint
+    emits an `event: ui_action` event BEFORE the text chunks and an
+    `event: spoken` event after the reply is complete.
+    """
+    # Stub the stream generator to populate the trace mid-iteration just
+    # like the real one does after agent-loop tool execution.
+    def fake_stream(history, user_message, product_manager, **kwargs):
+        trace = kwargs.get("trace")
+        if trace is not None:
+            trace["profile"] = {}
+            trace["last_smart_search"] = {
+                "args": {"category": "Flower", "strain_type": "Sativa"},
+                "result": {
+                    "products": [
+                        {"id": 1, "s": "Test Sativa Flower", "cat": "Flower"},
+                    ],
+                    "total": 1,
+                },
+            }
+        yield "Test Sativa Flower is great."
+
+    with patch("backend.main.get_recommendation_stream", side_effect=fake_stream):
+        response = client.post(
+            "/chat/stream",
+            json={
+                "session_id": "stream-search",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "sativa flower",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.text
+    # ui_action event present and contains the expected filter payload.
+    assert "event: ui_action" in body
+    assert "\"strain_type\":\"Sativa\"" in body or "\"strain_type\": \"Sativa\"" in body
+    # spoken event fires after we scan the reply for product names.
+    assert "event: spoken" in body
+    # Reply text appears in chunk(s).
+    assert "Test Sativa Flower" in body
+    # Terminator present.
+    assert "data: [DONE]" in body
+
+
+def test_chat_stream_with_compare_product_ids_injects_signal(client):
+    """/chat/stream honors compare_product_ids the same way /chat does."""
+    captured = {}
+
+    def fake_stream(history, user_message, product_manager, **kwargs):
+        captured["history"] = history
+        yield "stub"
+
+    with patch("backend.main.get_recommendation_stream", side_effect=fake_stream):
+        client.post(
+            "/chat/stream",
+            json={
+                "session_id": "stream-cmp",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "Compare these.",
+                "compare_product_ids": [10, 20],
+            },
+        )
+
+    assert any(
+        "COMPARE_BY_ID:" in msg.get("content", "")
+        for msg in captured["history"]
+    )

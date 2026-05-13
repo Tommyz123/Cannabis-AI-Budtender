@@ -60,6 +60,30 @@ class ChatRequest(BaseModel):
             "than injecting a synthetic user message into the history."
         ),
     )
+    manual_filters: dict = Field(
+        default_factory=dict,
+        description=(
+            "Filters the customer has set manually via the sidebar UI "
+            "(brand, strain_type, category, effects, max_price, max_thc, "
+            "on_sale). Sent on every /chat call so the AI is aware of the "
+            "user's manual constraints and can reason about them in replies "
+            "without overwriting them. The backend injects a single system "
+            "message describing these filters; it does not push a synthetic "
+            "user message and does not bypass the fast path."
+        ),
+    )
+    compare_product_ids: list[int] = Field(
+        default_factory=list,
+        description=(
+            "Product IDs the customer wants to compare side-by-side, set by "
+            "the storefront compare tray's 'Compare in chat' button. When "
+            "non-empty, the backend instructs the LLM to call "
+            "`get_product_details` once per ID (rather than `smart_search` "
+            "with free-text names, which is fuzzy and capped by the agent "
+            "loop's one-search-per-turn dedup). This bypasses the "
+            "`is_product_comparison` smart_search injection in llm_service."
+        ),
+    )
 
 
 class ChatResponse(BaseModel):

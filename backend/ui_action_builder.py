@@ -21,7 +21,7 @@ def build_ui_action(
     reply_text: str,
     product_manager,
 ) -> dict | None:
-    """Construct the ui_action dict from a populated trace.
+    """Construct the full ui_action dict from a populated trace.
 
     Args:
         trace: The out-param dict populated by `get_recommendation`. Expected
@@ -33,6 +33,32 @@ def build_ui_action(
         A dict with `filters`, `picks`, `spoken_product_ids`, and
         `total_matched`, or `None` when no smart_search ran this turn.
     """
+    partial = build_ui_action_partial(trace, product_manager)
+    if partial is None:
+        return None
+    last = trace.get("last_smart_search", {}) or {}
+    filtered_products = (last.get("result") or {}).get("products", []) or []
+    partial["spoken_product_ids"] = _scan_reply_for_product_ids(
+        reply_text, filtered_products
+    )
+    return partial
+
+
+def build_ui_action_partial(
+    trace: dict,
+    product_manager,
+) -> dict | None:
+    """Like ``build_ui_action`` but without the spoken-product-name scan.
+
+    Used by the streaming endpoint, which knows the filters and picks the
+    moment ``smart_search`` resolves but doesn't have the full reply text
+    until streaming completes. The streaming endpoint emits this partial
+    payload first (so the storefront can animate chips/grid/picks
+    immediately) and follows up with a ``spoken`` event once the reply is
+    complete (see ``scan_spoken_product_ids``).
+
+    Returns ``None`` when no smart_search ran this turn.
+    """
     last = trace.get("last_smart_search")
     if not last:
         return None
@@ -42,19 +68,33 @@ def build_ui_action(
     result = last.get("result", {}) or {}
 
     visible_filters = {
-        k: v for k, v in args.items()
-        if k in VISIBLE_FILTER_FIELDS and v
+        k: v for k, v in args.items() if k in VISIBLE_FILTER_FIELDS and v
     }
     filtered_products = result.get("products", []) or []
     picks = product_manager.score_picks(filtered_products, profile, limit=3)
-    spoken_ids = _scan_reply_for_product_ids(reply_text, filtered_products)
 
     return {
         "filters": visible_filters,
         "picks": picks,
-        "spoken_product_ids": spoken_ids,
+        "spoken_product_ids": [],
         "total_matched": result.get("total", 0),
     }
+
+
+def scan_spoken_product_ids(reply_text: str, trace: dict) -> list[int]:
+    """Scan the final reply text for product-name mentions.
+
+    The complement to ``build_ui_action_partial`` for the streaming flow:
+    once the assistant reply is fully streamed, this returns the ordered
+    list of product ids the reply mentioned (so the storefront can pulse
+    those cards). Returns an empty list if no smart_search ran or the
+    reply mentions no candidate names.
+    """
+    last = trace.get("last_smart_search")
+    if not last:
+        return []
+    filtered_products = (last.get("result") or {}).get("products", []) or []
+    return _scan_reply_for_product_ids(reply_text, filtered_products)
 
 
 def _scan_key(name: str) -> str:

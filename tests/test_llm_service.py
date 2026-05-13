@@ -376,3 +376,60 @@ def test_get_recommendation_beginner_ready_defaults_to_edibles():
         effects=["Relaxed", "Sleepy"],
         is_beginner=True,
     )
+
+
+# ── COMPARE_BY_ID signal: bypasses smart_search injection ─────────────────
+
+def test_prepare_messages_injects_smart_search_for_compare_without_signal():
+    """When the user message matches `is_product_comparison` and there's no
+    COMPARE_BY_ID signal in history, the smart_search-per-product instruction
+    is injected — this is the legacy free-text comparison flow.
+    """
+    from backend.llm_service import _prepare_messages
+
+    history = [
+        {"role": "user", "content": "Show me sativa flower"},
+        {"role": "assistant", "content": "1. Wet Dream\n2. Blue Dream"},
+    ]
+    messages = _prepare_messages(
+        history,
+        "How does Wet Dream compare to Blue Dream?",
+        profile=None,
+        is_beginner=False,
+    )
+    system_msg = messages[0]["content"]
+    assert "COMPARISON REQUEST DETECTED" in system_msg
+    assert "smart_search" in system_msg
+
+
+def test_prepare_messages_skips_smart_search_when_compare_by_id_signal_present():
+    """When the compare tray injects a `[UI SIGNAL] COMPARE_BY_ID:` system
+    message, the smart_search-per-product instruction is suppressed so the
+    LLM follows the by-ID instruction instead and doesn't see contradictory
+    routes.
+    """
+    from backend.llm_service import _prepare_messages
+
+    history = [
+        {"role": "user", "content": "Show me sativa flower"},
+        {"role": "assistant", "content": "1. Wet Dream\n2. Blue Dream"},
+        {
+            "role": "system",
+            "content": (
+                "[UI SIGNAL] COMPARE_BY_ID: 603, 604.\n"
+                "The customer selected these specific products to compare from the "
+                "storefront UI. For each ID above, call "
+                "`get_product_details(product_id='<id>')` exactly once in this turn..."
+            ),
+        },
+    ]
+    messages = _prepare_messages(
+        history,
+        "How does Wet Dream compare to Blue Dream?",
+        profile=None,
+        is_beginner=False,
+    )
+    system_msg = messages[0]["content"]
+    # The legacy smart_search instruction must be absent — the by-ID signal
+    # carries the authoritative tool routing.
+    assert "COMPARISON REQUEST DETECTED" not in system_msg

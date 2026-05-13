@@ -253,6 +253,83 @@ class ProductManager:
         """
         return [_row_to_compact(row) for _, row in self._df.iterrows()]
 
+    def get_filter_metadata(self) -> dict:
+        """Return aggregate metadata used to populate the filter sidebar.
+
+        Categories include their product counts so the sidebar / category-bar
+        can show counts inline. Brands and effects come back as lists of
+        `{name, count}` so the UI can either show all (with a search box)
+        or take the top-N.
+
+        THC ranges are split by unit because % flower and mg edibles can't
+        share a single slider — the UI shows two sliders or hides the
+        irrelevant one when a single category is active.
+        """
+        df = self._df
+
+        categories = [
+            {"name": cat, "count": int(len(cdf))}
+            for cat, cdf in self._category_index.items()
+        ]
+        categories.sort(key=lambda c: -c["count"])
+
+        brand_counts = df["brand"].dropna().value_counts()
+        brands = [
+            {"name": str(name), "count": int(cnt)}
+            for name, cnt in brand_counts.items()
+        ]
+
+        strain_counts = df["strain_type"].dropna().value_counts()
+        strain_types = [
+            {"name": str(name), "count": int(cnt)}
+            for name, cnt in strain_counts.items()
+        ]
+
+        from collections import Counter
+
+        effect_counts: Counter[str] = Counter()
+        for raw in df["effects"].dropna():
+            for tok in str(raw).split(","):
+                tok = tok.strip()
+                if tok:
+                    effect_counts[tok] += 1
+        effects = [
+            {"name": name, "count": int(cnt)}
+            for name, cnt in effect_counts.most_common()
+        ]
+
+        prices = df["price"].dropna()
+        price_range = {
+            "min": float(prices.min()) if not prices.empty else 0.0,
+            "max": float(prices.max()) if not prices.empty else 0.0,
+        }
+
+        pct_thc = df.loc[df["thc_unit"] == "%", "thc_level"].dropna()
+        mg_thc = df.loc[df["thc_unit"] == "mg", "thc_level"].dropna()
+        thc_pct_range = {
+            "min": float(pct_thc.min()) if not pct_thc.empty else 0.0,
+            "max": float(pct_thc.max()) if not pct_thc.empty else 0.0,
+        }
+        thc_mg_range = {
+            "min": float(mg_thc.min()) if not mg_thc.empty else 0.0,
+            "max": float(mg_thc.max()) if not mg_thc.empty else 0.0,
+        }
+
+        on_sale_count = int(df["is_on_sale"].fillna(0).astype(bool).sum()) \
+            if "is_on_sale" in df.columns else 0
+
+        return {
+            "categories": categories,
+            "brands": brands,
+            "strain_types": strain_types,
+            "effects": effects,
+            "price_range": price_range,
+            "thc_pct_range": thc_pct_range,
+            "thc_mg_range": thc_mg_range,
+            "on_sale_count": on_sale_count,
+            "total": int(len(df)),
+        }
+
     def score_picks(
         self,
         filtered: list[dict],

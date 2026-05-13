@@ -11,6 +11,8 @@ from backend.product_manager import ProductManager
 from backend.ui_action_builder import (
     VISIBLE_FILTER_FIELDS,
     build_ui_action,
+    build_ui_action_partial,
+    scan_spoken_product_ids,
     _scan_key,
     _scan_reply_for_product_ids,
 )
@@ -203,3 +205,94 @@ def test_is_beginner_and_hardware_type_excluded_from_filters():
     }
     # And the whitelist itself reflects the contract
     assert VISIBLE_FILTER_FIELDS == {"category", "strain_type", "effects", "max_price"}
+
+
+# ── build_ui_action_partial: streaming-friendly half (filters + picks) ────
+
+def test_partial_returns_none_when_no_smart_search():
+    """No trace → no partial — same contract as build_ui_action."""
+    assert build_ui_action_partial({}, _pm) is None
+    assert build_ui_action_partial({"profile": {}}, _pm) is None
+
+
+def test_partial_includes_filters_picks_total_but_empty_spoken():
+    """Partial omits the reply scan — spoken_product_ids must be empty.
+
+    The streaming /chat/stream endpoint emits ui_action BEFORE the reply
+    has streamed in, so spoken can't be known yet. It's filled in later by
+    scan_spoken_product_ids → an `event: spoken` SSE event.
+    """
+    fake_products = [_make_fake_product(701, "Pre-stream Pick")]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower", "strain_type": "Sativa"},
+            "result": {"products": fake_products, "total": 1},
+        },
+    }
+    partial = build_ui_action_partial(trace, _pm)
+    assert partial is not None
+    assert partial["filters"] == {"category": "Flower", "strain_type": "Sativa"}
+    assert partial["total_matched"] == 1
+    assert partial["picks"]  # Tier-7 fallback always yields ≥1 pick
+    # Critical: spoken is always empty in the partial — no reply scanned yet.
+    assert partial["spoken_product_ids"] == []
+
+
+def test_partial_keys_match_full_ui_action():
+    """build_ui_action and build_ui_action_partial share the same dict shape.
+
+    Frontend code consumes both via the same code path; key skew here would
+    silently break the streaming flow.
+    """
+    fake = [_make_fake_product(800, "Shape Check")]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": fake, "total": 1},
+        },
+    }
+    full = build_ui_action(trace, "irrelevant reply", _pm)
+    partial = build_ui_action_partial(trace, _pm)
+    assert set(full.keys()) == set(partial.keys())
+
+
+# ── scan_spoken_product_ids: streaming reply scan ────────────────────────
+
+def test_scan_spoken_returns_empty_when_no_smart_search():
+    """Reply scan returns [] when no smart_search happened (no candidates)."""
+    assert scan_spoken_product_ids("any reply here", {}) == []
+    assert scan_spoken_product_ids("any reply here", {"profile": {}}) == []
+
+
+def test_scan_spoken_returns_ids_in_order_of_first_mention():
+    """Spoken ids come back ordered by appearance in the reply, deduped."""
+    products = [
+        _make_fake_product(1, "Alpha Strain"),
+        _make_fake_product(2, "Beta Strain"),
+        _make_fake_product(3, "Gamma Strain"),
+    ]
+    trace = {
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 3},
+        },
+    }
+    reply = "Try Gamma Strain first, then Alpha Strain, then Alpha Strain again."
+    ids = scan_spoken_product_ids(reply, trace)
+    # Gamma first (mentioned first), Alpha second, no Beta (never mentioned),
+    # Alpha not duplicated.
+    assert ids == [3, 1]
+
+
+def test_scan_spoken_empty_reply_returns_empty():
+    """Empty / whitespace reply text → empty list."""
+    products = [_make_fake_product(1, "Alpha Strain")]
+    trace = {
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 1},
+        },
+    }
+    assert scan_spoken_product_ids("", trace) == []

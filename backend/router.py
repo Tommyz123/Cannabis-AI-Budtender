@@ -613,41 +613,62 @@ def try_extract_search_params(
             return None
 
     # ── Strain type ───────────────────────────────────────────────────────────
+    # CURRENT MESSAGE WINS: if the user just typed "sativa vape", strain must be
+    # Sativa even though earlier turns said Indica. Only fall back to history
+    # when the current message says nothing about a strain.
     effects: list[str] = []
     strain_type: str | None = None
 
-    if re.search(r"indica", all_user, re.I):
-        strain_type = "Indica"
-        effects = ["Relaxed", "Sleepy"]
-    elif re.search(r"sativa", all_user, re.I):
-        strain_type = "Sativa"
-        effects = ["Energetic", "Uplifted"]
-    elif re.search(r"hybrid", all_user, re.I):
-        strain_type = "Hybrid"
+    def _detect_strain(text: str) -> str | None:
+        if re.search(r"\bindica\b", text, re.I):
+            return "Indica"
+        if re.search(r"\bsativa\b", text, re.I):
+            return "Sativa"
+        if re.search(r"\bhybrid\b", text, re.I):
+            return "Hybrid"
+        return None
+
+    strain_in_current = _detect_strain(msg_lower)
+    strain_type = strain_in_current or _detect_strain(user_history.lower())
 
     # ── Effect keywords ───────────────────────────────────────────────────────
-    if re.search(r"\b(sleep|sleepy)\b|助眠|睡眠|入睡|睡觉|夜间", all_user, re.I):
-        if "Relaxed" not in effects:
-            effects.append("Relaxed")
-        if "Sleepy" not in effects:
-            effects.append("Sleepy")
+    # Three-step rule (see commit msg for examples):
+    #   1. Strain detection NEVER auto-adds default effects ("indica" alone
+    #      no longer implies Relaxed/Sleepy).
+    #   2. Explicit effect words in the CURRENT message always count
+    #      ("energetic sativa flower" → strain=Sativa AND effects=[Energetic]).
+    #   3. Fall back to history effects ONLY when the current message has
+    #      no effect words AND no strain — this preserves "keep the same
+    #      vibe" / "make it cheaper" follow-ups, while a fresh "sativa
+    #      flower" after a "sleepy" turn drops the stale Sleepy.
+    def _detect_effects(text: str) -> list[str]:
+        out: list[str] = []
+        if re.search(r"\b(sleep|sleepy)\b|助眠|睡眠|入睡|睡觉|夜间", text, re.I):
+            out.append("Relaxed")
+            out.append("Sleepy")
+        if re.search(r"\b(relax|relaxing|unwind|chill|calm)\b|放松|轻松|减压|平静", text, re.I):
+            if "Relaxed" not in out:
+                out.append("Relaxed")
+            if "Calm" not in out:
+                out.append("Calm")
+        if re.search(
+            r"\b(energy|energetic|focus|creative|uplift(?:ed|ing)?|happy|draw(?:ing)?|art)\b|提神|精力|专注|创意",
+            text,
+            re.I,
+        ):
+            if "Energetic" not in out:
+                out.append("Energetic")
+            if re.search(r"\b(uplift(?:ed|ing)?|happy)\b", text, re.I) and "Uplifted" not in out:
+                out.append("Uplifted")
+        return out
 
-    if re.search(r"\b(relax|relaxing|unwind|chill|calm)\b|放松|轻松|减压|平静", all_user, re.I):
-        if "Relaxed" not in effects:
-            effects.append("Relaxed")
-        if "Calm" not in effects:
-            effects.append("Calm")
+    effects = _detect_effects(msg_lower)
+    if not effects and not strain_in_current:
+        effects = _detect_effects(user_history.lower())
 
-    if re.search(
-        r"\b(energy|energetic|focus|creative|uplift(?:ed|ing)?|happy|draw(?:ing)?|art)\b|提神|精力|专注|创意",
-        all_user,
-        re.I,
-    ):
-        if "Energetic" not in effects:
-            effects.append("Energetic")
-        if re.search(r"\b(uplift(?:ed|ing)?|happy)\b", all_user, re.I) and "Uplifted" not in effects:
-            effects.append("Uplifted")
-
+    # Beginner-ready safety fallback: kept against all_user so the safety
+    # net still fires when the beginner-ness came from earlier in the
+    # conversation. Only used when neither strain nor effect are present.
     if beginner_ready and not effects and not strain_type:
         if re.search(r"\b(sleep|sleepy|bed|night)\b", all_user, re.I):
             effects = ["Relaxed", "Sleepy"]
