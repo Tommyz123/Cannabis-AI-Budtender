@@ -4,28 +4,99 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Verdant — AI Budtender</title>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<header id="app-header">
-  <h1>🌿 Verdant</h1>
-  <div class="header-right">
-    <span class="age-badge">21+ ✓</span>
-    <button id="cart-trigger" aria-label="Open cart">
-      🛒 <span id="cart-count">0</span>
-    </button>
+<!-- ─────────────────────── TOP NAVIGATION BAR ─────────────────────── -->
+<header id="top-nav" role="banner">
+  <div class="top-nav-inner">
+    <button class="top-nav-hamburger" aria-label="Open menu" hidden>☰</button>
+
+    <a href="#" class="brand-link" aria-label="Verdant home">
+      <span class="brand-mark">🌿</span>
+      <span class="brand-text">Verdant</span>
+    </a>
+
+    <div class="top-nav-search">
+      <span class="search-icon" aria-hidden="true">🔍</span>
+      <input
+        id="global-search"
+        type="search"
+        placeholder="Search strains, brands, effects…"
+        aria-label="Search products"
+        autocomplete="off"
+      />
+    </div>
+
+    <div class="top-nav-right">
+      <span class="age-badge" title="Adult use only">21+ ✓</span>
+      <button id="cart-trigger" class="cart-button" aria-label="Open cart">
+        <span class="cart-icon" aria-hidden="true">🛒</span>
+        <span id="cart-count" class="cart-count">0</span>
+      </button>
+    </div>
   </div>
 </header>
 
-<main class="layout">
+<!-- ─────────────────────── DELIVERY BANNER ─────────────────────── -->
+<div id="delivery-banner" role="region" aria-label="Delivery mode">
+  <div class="delivery-banner-inner">
+    <span class="delivery-mode">📍 In-store pickup · Demo Dispensary</span>
+    <span class="delivery-divider" aria-hidden="true">·</span>
+    <span class="delivery-hours">Open today: 10:00 AM – 10:00 PM</span>
+  </div>
+</div>
 
-  <section id="product-pane" aria-label="Products">
-    <div id="filter-chips" aria-label="Active filters"></div>
-    <div id="result-meta" aria-live="polite">Showing 217 of 217</div>
+<!-- ─────────────────────── CATEGORY BAR ─────────────────────── -->
+<nav id="category-bar" aria-label="Product categories">
+  <div class="cat-bar-inner">
+    <button class="cat-scroll-btn cat-scroll-left" aria-label="Scroll categories left" hidden>‹</button>
+    <ul class="cat-list" id="cat-list" role="tablist"></ul>
+    <button class="cat-scroll-btn cat-scroll-right" aria-label="Scroll categories right" hidden>›</button>
+  </div>
+</nav>
 
-    <section id="top-pick-row" hidden>
-      <h2 class="pick-row-title">✨ AI's Top Pick for You</h2>
+<!-- ─────────────────────── PROMO BANNER (optional) ─────────────────────── -->
+<section id="promo-banner" aria-label="Featured" hidden>
+  <div class="promo-banner-inner" id="promo-banner-inner"></div>
+</section>
+
+<!-- ─────────────────────── MAIN: SIDEBAR + GRID ─────────────────────── -->
+<main id="storefront" class="storefront-layout">
+
+  <aside id="filter-sidebar" aria-label="Filters">
+    <div class="sidebar-inner">
+      <div class="sidebar-header">
+        <h2 class="sidebar-title">Filters</h2>
+        <button id="sidebar-reset" class="sidebar-reset" type="button">Reset</button>
+      </div>
+      <div id="sidebar-sections"><!-- filter-sidebar.js fills this --></div>
+    </div>
+  </aside>
+
+  <section id="product-area" aria-label="Products">
+    <div id="result-toolbar">
+      <div id="result-meta" aria-live="polite">Loading…</div>
+      <div id="sort-wrap">
+        <label class="sort-label" for="sort-select">Sort:</label>
+        <select id="sort-select" aria-label="Sort products">
+          <option value="newest">Newest first</option>
+          <option value="price-asc">Price: low → high</option>
+          <option value="price-desc">Price: high → low</option>
+          <option value="thc-desc">THC: high → low</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="active-chips" aria-label="Active filters"></div>
+
+    <section id="top-pick-row" hidden aria-label="AI's top picks">
+      <h2 class="pick-row-title"><span class="sparkle">✨</span> AI's Top Pick for You</h2>
       <div id="top-pick-cards"></div>
     </section>
 
@@ -33,7 +104,15 @@
     <div id="product-grid" role="list"></div>
 
     <!-- Product detail modal -->
-    <div id="product-modal" class="modal" hidden aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div
+      id="product-modal"
+      class="modal"
+      hidden
+      aria-hidden="true"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
       <div class="modal-backdrop" data-modal-close></div>
       <div class="modal-content" role="document">
         <button class="modal-close" aria-label="Close" data-modal-close>✕</button>
@@ -42,30 +121,61 @@
     </div>
   </section>
 
-  <aside id="chat-pane" aria-label="Chat">
-    <div id="chat-pane-header">
-      <div class="chat-pane-title">AI Budtender</div>
-      <div class="chat-pane-sub">Here to help you find the right product</div>
+</main>
+
+<!-- ─────────────────────── FOOTER ─────────────────────── -->
+<footer id="storefront-footer">
+  <div class="footer-inner">
+    <div class="footer-license">
+      <strong>21+</strong> · NY State License #DEMO-MOCK-2026 · Educational demo
+    </div>
+    <div class="footer-disclaimer">
+      Cannabis products may impair concentration, coordination, and judgment.
+      Do not operate vehicles or machinery while using. Keep out of reach of
+      children. For use only by adults 21 and older.
+    </div>
+  </div>
+</footer>
+
+<!-- ─────────────────────── CART DRAWER (existing) ─────────────────────── -->
+<aside id="cart-drawer" hidden aria-label="Cart contents"></aside>
+
+<!-- ─────────────────────── CHAT DRAWER (bottom, expandable) ─────────────────────── -->
+<aside id="chat-drawer" aria-label="AI Budtender" class="collapsed">
+  <button id="chat-drawer-toggle" type="button" aria-expanded="false">
+    <span class="chat-toggle-icon" aria-hidden="true">💬</span>
+    <span class="chat-toggle-text">Ask the AI Budtender — what kind of vibe are you after?</span>
+    <span class="chat-toggle-arrow" aria-hidden="true">▲</span>
+  </button>
+
+  <div id="chat-drawer-body" hidden>
+    <div id="chat-header">
+      <div class="chat-title">AI Budtender</div>
+      <div class="chat-sub">I'll help you find the right product · Type a question</div>
+      <button id="chat-drawer-close" class="chat-close-btn" aria-label="Collapse chat">▼</button>
     </div>
     <div id="budtender-messages" role="log" aria-live="polite"></div>
     <div id="budtender-input-area">
       <input
         id="budtender-input"
         type="text"
-        placeholder="Ask me anything..."
+        placeholder="What kind of vibe? (e.g. relax after work)"
         aria-label="Your message"
         autocomplete="off"
       />
       <button id="budtender-send" aria-label="Send message">Send</button>
     </div>
-  </aside>
+  </div>
+</aside>
 
-</main>
-
-<aside id="cart-drawer" hidden aria-label="Cart contents"></aside>
-
+<!-- ─────────────────────── SCRIPTS ─────────────────────── -->
+<!-- Load order: utility → state → UI modules → grid → chat -->
 <script src="placeholders.js"></script>
+<script src="state.js"></script>
 <script src="cart.js"></script>
+<script src="top-nav.js"></script>
+<script src="category-bar.js"></script>
+<script src="filter-sidebar.js"></script>
 <script src="product-grid.js"></script>
 <script src="chat.js"></script>
 </body>

@@ -109,50 +109,56 @@ const Cart = (() => {
     const drawer = document.getElementById("cart-drawer");
     if (!drawer) return;
 
+    const header = `
+      <div class="cart-drawer-header">
+        <h2 class="cart-drawer-title">🛒 Your Cart</h2>
+        <button class="cart-drawer-close" aria-label="Close cart" type="button">&times;</button>
+      </div>
+    `;
+
     if (items.length === 0) {
-      drawer.innerHTML = `
-        <div class="cart-drawer-header">
-          <h2>🛒 Your Cart</h2>
-          <button class="cart-drawer-close" aria-label="Close cart">&times;</button>
-        </div>
-        <div class="cart-empty">Your cart is empty.</div>
-      `;
-    } else {
-      const rows = items
-        .map((it) => {
-          const p = productLookup ? productLookup(it.id) : null;
-          const name = p ? p.s : `Product #${it.id}`;
-          const price = p && typeof p.p === "number" ? p.p : 0;
-          const lineTotal = price * it.qty;
-          return `
-            <div class="cart-item" data-id="${it.id}">
+      drawer.innerHTML = `${header}
+        <div class="cart-drawer-body">
+          <div class="cart-empty">Your cart is empty.</div>
+        </div>`;
+      return;
+    }
+
+    const rows = items
+      .map((it) => {
+        const p = productLookup ? productLookup(it.id) : null;
+        const name = p ? p.s : `Product #${it.id}`;
+        const brand = p && p.c ? p.c : "";
+        const price = p && typeof p.p === "number" ? p.p : 0;
+        const lineTotal = price * it.qty;
+        return `
+          <div class="cart-item" data-id="${it.id}">
+            <div class="cart-item-info">
+              ${brand ? `<div class="cart-item-brand">${escapeHTML(brand)}</div>` : ""}
               <div class="cart-item-name">${escapeHTML(name)}</div>
-              <div class="cart-item-row">
-                <div class="cart-qty">
-                  <button class="cart-qty-dec" aria-label="Decrease quantity" data-id="${it.id}">−</button>
-                  <span class="cart-qty-val">${it.qty}</span>
-                  <button class="cart-qty-inc" aria-label="Increase quantity" data-id="${it.id}">+</button>
-                </div>
+              <div class="cart-item-controls">
+                <button class="cart-qty-btn cart-qty-dec" aria-label="Decrease quantity" data-id="${it.id}" type="button">−</button>
+                <span class="cart-item-qty">${it.qty}</span>
+                <button class="cart-qty-btn cart-qty-inc" aria-label="Increase quantity" data-id="${it.id}" type="button">+</button>
                 <div class="cart-item-price">$${lineTotal.toFixed(2)}</div>
-                <button class="cart-item-remove" aria-label="Remove item" data-id="${it.id}">&times;</button>
+                <button class="cart-item-remove" aria-label="Remove item" data-id="${it.id}" type="button">&times;</button>
               </div>
             </div>
-          `;
-        })
-        .join("");
+          </div>
+        `;
+      })
+      .join("");
 
-      drawer.innerHTML = `
-        <div class="cart-drawer-header">
-          <h2>🛒 Your Cart</h2>
-          <button class="cart-drawer-close" aria-label="Close cart">&times;</button>
-        </div>
-        <div class="cart-items">${rows}</div>
-        <div class="cart-total">
+    drawer.innerHTML = `${header}
+      <div class="cart-drawer-body">${rows}</div>
+      <div class="cart-drawer-footer">
+        <div class="cart-total-row">
           <span>Total</span>
-          <span class="cart-total-val">$${total().toFixed(2)}</span>
+          <span>$${total().toFixed(2)}</span>
         </div>
-      `;
-    }
+        <button class="cart-checkout-btn" type="button">Proceed to checkout</button>
+      </div>
+    `;
   }
 
   function render() {
@@ -168,23 +174,19 @@ const Cart = (() => {
       .replace(/"/g, "&quot;");
   }
 
+  // CSS-driven slide: #cart-drawer[hidden] is positioned off-screen with
+  // translateX(100%) but kept display:flex so the transition runs. Toggling
+  // the `hidden` attribute is enough.
   function openDrawer() {
     const drawer = document.getElementById("cart-drawer");
     if (!drawer) return;
     drawer.hidden = false;
-    // force reflow so the transition triggers
-    void drawer.offsetWidth;
-    drawer.classList.add("open");
   }
 
   function closeDrawer() {
     const drawer = document.getElementById("cart-drawer");
     if (!drawer) return;
-    drawer.classList.remove("open");
-    // wait for transition then hide
-    setTimeout(() => {
-      drawer.hidden = true;
-    }, 300);
+    drawer.hidden = true;
   }
 
   function wire() {
@@ -210,6 +212,8 @@ const Cart = (() => {
           changeQty(target.getAttribute("data-id"), +1);
         } else if (target.classList.contains("cart-qty-dec")) {
           changeQty(target.getAttribute("data-id"), -1);
+        } else if (target.classList.contains("cart-checkout-btn")) {
+          alert("Checkout is a demo only — no real payment flow.");
         }
       });
     }

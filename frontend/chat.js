@@ -1,29 +1,29 @@
 /**
- * AI Budtender Chat — Module 6 refactor.
+ * Chat — bottom sticky drawer that hosts the AI Budtender conversation.
  *
  * Responsibilities:
- *   - Render welcome message after product grid loads
- *   - sendMessage flow that POSTs /chat, then orchestrates UI animation
- *     BEFORE typewriter-rendering the AI reply
- *   - Listen for `filter-chip-removed` CustomEvent dispatched by ProductGrid
- *     and POST /chat with `removed_filters` (and empty user_message)
- *   - Typewriter effect with click-to-skip
+ *   - Toggle expand/collapse on the bottom drawer.
+ *   - Render welcome message after init.
+ *   - Send user message → POST /chat with manual_filters from Store →
+ *     run ProductGrid.applyUIAction → typewriter the AI reply → pulse spoken.
+ *   - Listen for `filter-chip-removed` events from ProductGrid; for fields
+ *     the AI understands, round-trip /chat with removed_filters (and a
+ *     visual "filter removed" bubble). For fields it doesn't (brand,
+ *     max_thc, on_sale, query), the chip × already updated Store locally
+ *     and we don't pester the AI.
+ *   - Typewriter effect with click-to-skip.
  *
- * Depends on:
- *   - API_BASE             (placeholders.js)
- *   - window.Cart          (cart.js)
- *   - window.ProductGrid   (product-grid.js, exposes init/applyUIAction/pulseSpoken)
- *
- * NOTE: ProductGrid dispatches `filter-chip-removed` (detail: {field, value})
- * when the user clicks a chip ×; chat.js does NOT add a chip-click handler.
+ * Dependencies:
+ *   - window.Store          (state.js)
+ *   - window.ProductGrid    (product-grid.js)
+ *   - window.Cart           (cart.js)
+ *   - API_BASE              (placeholders.js)
  */
 
 const MAX_HISTORY = 20;
 
-// ── Session state ────────────────────────────────────────────────────────────
-
 let sessionId = generateUUID();
-let conversationHistory = []; // Array of {role, content} objects
+let conversationHistory = [];
 let isSending = false;
 
 function generateUUID() {
@@ -34,13 +34,13 @@ function generateUUID() {
   });
 }
 
-// ── DOM references ───────────────────────────────────────────────────────────
-
 let messagesEl = null;
 let inputEl = null;
 let sendBtn = null;
-
-// ── Pretty label map for the filter-removed system bubble ────────────────────
+let drawerEl = null;
+let toggleBtn = null;
+let bodyEl = null;
+let closeBtn = null;
 
 const PRETTY = {
   strain_type: "Strain",
@@ -50,12 +50,17 @@ const PRETTY = {
 };
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
-
-window.addEventListener("DOMContentLoaded", async () => {
+window.addEventListener("DOMContentLoaded", () => {
+  drawerEl = document.getElementById("chat-drawer");
+  toggleBtn = document.getElementById("chat-drawer-toggle");
+  bodyEl = document.getElementById("chat-drawer-body");
+  closeBtn = document.getElementById("chat-drawer-close");
   messagesEl = document.getElementById("budtender-messages");
   inputEl = document.getElementById("budtender-input");
   sendBtn = document.getElementById("budtender-send");
 
+  if (toggleBtn) toggleBtn.addEventListener("click", toggleDrawer);
+  if (closeBtn) closeBtn.addEventListener("click", collapseDrawer);
   if (sendBtn) sendBtn.addEventListener("click", onSendClick);
   if (inputEl) {
     inputEl.addEventListener("keydown", (e) => {
@@ -66,29 +71,42 @@ window.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Load the product grid before showing the welcome bubble so the
-  // first thing the user sees is a populated page.
-  if (window.ProductGrid && typeof window.ProductGrid.init === "function") {
-    try {
-      await window.ProductGrid.init();
-    } catch (err) {
-      console.warn("ProductGrid.init failed:", err);
-    }
-  }
-
-  // Refresh cart badge from localStorage (no-op if Cart.render isn't exposed).
-  if (window.Cart && typeof window.Cart.render === "function") {
-    window.Cart.render();
-  }
-
+  // Render welcome once on load (drawer remains collapsed by default).
   appendMessage(
     "ai",
-    "Hey there! 👋 Welcome! I'm your AI Budtender — here to help you find something that's just right. What brings you in?"
+    "Hey there! 👋 I'm your AI Budtender. Tell me the vibe you're after — relaxing, social, focused, sleep — and I'll narrow the menu for you."
   );
 });
 
-// ── User-initiated send ──────────────────────────────────────────────────────
+// ── Drawer expand/collapse ───────────────────────────────────────────────────
+function toggleDrawer() {
+  if (!drawerEl) return;
+  if (drawerEl.classList.contains("expanded")) {
+    collapseDrawer();
+  } else {
+    expandDrawer();
+  }
+}
+function expandDrawer() {
+  if (!drawerEl) return;
+  drawerEl.classList.remove("collapsed");
+  drawerEl.classList.add("expanded");
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "true");
+  if (bodyEl) bodyEl.hidden = false;
+  setTimeout(() => {
+    if (inputEl) inputEl.focus();
+    scrollToBottom();
+  }, 60);
+}
+function collapseDrawer() {
+  if (!drawerEl) return;
+  drawerEl.classList.remove("expanded");
+  drawerEl.classList.add("collapsed");
+  if (toggleBtn) toggleBtn.setAttribute("aria-expanded", "false");
+  if (bodyEl) bodyEl.hidden = true;
+}
 
+// ── Send flow ────────────────────────────────────────────────────────────────
 function onSendClick() {
   if (!inputEl) return;
   const text = inputEl.value.trim();
@@ -97,41 +115,88 @@ function onSendClick() {
   sendMessage(text);
 }
 
-async function sendMessage(text) {
+async function sendMessage(text, extras = {}) {
+  if (drawerEl && !drawerEl.classList.contains("expanded")) {
+    expandDrawer();
+  }
   appendMessage("user", text);
   setInputEnabled(false);
   const typingEl = showTypingIndicator();
 
   try {
-    const data = await callChatAPI(text);
-    typingEl.remove();
-
-    if (data.ui_action) {
-      await window.ProductGrid.applyUIAction(data.ui_action);
+    const fullReply = await streamFlow(text, extras);
+    if (!fullReply.firstChunkArrived) {
+      // Defensive: no chunks at all (shouldn't happen for a non-empty reply)
+      typingEl.remove();
+      appendMessage("ai", "(no reply received)");
     }
-    await typewriterAppend("ai", data.reply || "");
-    schedulePulse(data.ui_action);
 
     addToHistory("user", text);
-    addToHistory("assistant", data.reply || "");
+    addToHistory("assistant", fullReply.text || "");
   } catch (err) {
-    typingEl.remove();
+    if (typingEl && typingEl.remove) typingEl.remove();
     appendMessage("ai", "Sorry, something went wrong. Please try again.");
     console.error("Chat error:", err);
   } finally {
     setInputEnabled(true);
   }
+
+  /**
+   * Inline helper that orchestrates the SSE → DOM pipeline for one turn:
+   *   - on ui_action: fire-and-forget ProductGrid.applyUIAction (animation
+   *     runs in parallel with the text streaming below)
+   *   - on first chunk: remove typing indicator, create AI bubble, append
+   *   - on later chunks: append to the same bubble, scroll to bottom
+   *   - on spoken event: pulse the named cards
+   */
+  async function streamFlow(userMessage, extraPayload) {
+    let aiBubble = null;
+    let rawText = "";
+    let firstChunkArrived = false;
+
+    await streamChatAPI(userMessage, extraPayload, {
+      onUIAction(uiAction) {
+        if (window.ProductGrid) {
+          window.ProductGrid.applyUIAction(uiAction);
+        }
+      },
+      onChunk(chunk) {
+        if (!firstChunkArrived) {
+          firstChunkArrived = true;
+          if (typingEl && typingEl.remove) typingEl.remove();
+          aiBubble = document.createElement("div");
+          aiBubble.className = "message ai";
+          messagesEl.appendChild(aiBubble);
+        }
+        rawText += chunk;
+        aiBubble.innerHTML = renderMarkdown(rawText);
+        scrollToBottom();
+      },
+      onSpoken(ids) {
+        if (window.ProductGrid && Array.isArray(ids) && ids.length > 0) {
+          window.ProductGrid.pulseSpoken(ids);
+        }
+      },
+    });
+
+    return { text: rawText, firstChunkArrived };
+  }
 }
 
 // ── Filter-chip × handler ────────────────────────────────────────────────────
-
+// ProductGrid removed the filter from Store already; here we round-trip the
+// backend (with removed_filters) so the AI can comment + re-search via the
+// streaming endpoint.
 window.addEventListener("filter-chip-removed", async (e) => {
-  if (isSending) return; // ignore while another request is in flight
+  if (isSending) return;
   const detail = (e && e.detail) || {};
   const { field, value } = detail;
   if (!field) return;
 
-  // Visual-only system bubble; NOT pushed into conversationHistory.
+  if (drawerEl && !drawerEl.classList.contains("expanded")) {
+    expandDrawer();
+  }
+
   appendSystemBubble(
     `🔧 Filter removed: ${PRETTY[field] || field} = ${value}`
   );
@@ -139,41 +204,52 @@ window.addEventListener("filter-chip-removed", async (e) => {
   setInputEnabled(false);
   const typingEl = showTypingIndicator();
 
+  let aiBubble = null;
+  let rawText = "";
+  let firstChunkArrived = false;
+
   try {
-    const data = await callChatAPI("", {
-      removed_filters: { [field]: value },
-    });
-    typingEl.remove();
+    await streamChatAPI(
+      "",
+      { removed_filters: { [field]: String(value) } },
+      {
+        onUIAction(uiAction) {
+          if (window.ProductGrid) {
+            window.ProductGrid.applyUIAction(uiAction);
+          }
+        },
+        onChunk(chunk) {
+          if (!firstChunkArrived) {
+            firstChunkArrived = true;
+            typingEl.remove();
+            aiBubble = document.createElement("div");
+            aiBubble.className = "message ai";
+            messagesEl.appendChild(aiBubble);
+          }
+          rawText += chunk;
+          aiBubble.innerHTML = renderMarkdown(rawText);
+          scrollToBottom();
+        },
+        onSpoken(ids) {
+          if (window.ProductGrid && Array.isArray(ids) && ids.length > 0) {
+            window.ProductGrid.pulseSpoken(ids);
+          }
+        },
+      }
+    );
 
-    if (data.ui_action) {
-      await window.ProductGrid.applyUIAction(data.ui_action);
+    if (!firstChunkArrived) {
+      typingEl.remove();
     }
-    await typewriterAppend("ai", data.reply || "");
-    schedulePulse(data.ui_action);
-
-    // Do NOT push the synthetic empty user_message into history.
-    // DO push the assistant reply so future turns have context.
-    addToHistory("assistant", data.reply || "");
+    addToHistory("assistant", rawText || "");
   } catch (err) {
-    typingEl.remove();
+    if (typingEl && typingEl.remove) typingEl.remove();
     appendMessage("ai", "Sorry, something went wrong.");
     console.error("Chip-removal chat error:", err);
   } finally {
     setInputEnabled(true);
   }
 });
-
-function schedulePulse(uiAction) {
-  const ids =
-    uiAction && Array.isArray(uiAction.spoken_product_ids)
-      ? uiAction.spoken_product_ids
-      : [];
-  if (ids.length === 0) return;
-  if (!window.ProductGrid || typeof window.ProductGrid.pulseSpoken !== "function") return;
-  setTimeout(() => window.ProductGrid.pulseSpoken(ids), 100);
-}
-
-// ── History management ───────────────────────────────────────────────────────
 
 function addToHistory(role, content) {
   conversationHistory.push({ role, content });
@@ -182,32 +258,118 @@ function addToHistory(role, content) {
   }
 }
 
-// ── API call ─────────────────────────────────────────────────────────────────
+// ── SSE / streaming chat call ────────────────────────────────────────────────
+/**
+ * POST /chat/stream and parse the typed SSE response.
+ *
+ * Wire format (see backend/main.py):
+ *   event: ui_action  → filters + picks + total_matched (no spoken ids)
+ *   data:  {chunk: "..."}  → reply text, may arrive in many chunks
+ *   event: spoken     → [id, id, ...] ordered list of product ids
+ *   data:  [DONE]
+ *
+ * Callbacks
+ *   onUIAction(uiAction)  — once (or zero times) per turn
+ *   onChunk(text)         — many times
+ *   onSpoken(ids)         — once (or zero times)
+ *
+ * Always includes the current sidebar state as `manual_filters` so the AI
+ * sees what's narrowed; backend uses it as low-priority context.
+ */
+async function streamChatAPI(userMessage, extras = {}, callbacks = {}) {
+  const manualFilters = window.Store
+    ? window.Store.getManualFiltersPayload()
+    : {};
 
-async function callChatAPI(userMessage, extras = {}) {
   const payload = {
     session_id: sessionId,
     messages: conversationHistory,
     is_beginner: false,
     user_message: userMessage,
+    ...(Object.keys(manualFilters).length ? { manual_filters: manualFilters } : {}),
     ...extras,
   };
 
-  const response = await fetch(`${API_BASE}/chat`, {
+  const response = await fetch(`${API_BASE}/chat/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 
-  if (!response.ok) {
+  if (!response.ok || !response.body) {
     throw new Error(`API error: ${response.status}`);
   }
 
-  return await response.json();
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // SSE events are separated by a blank line ("\n\n"). Find the boundary
+    // and drain complete events from the buffer; the tail (incomplete) stays.
+    let boundary;
+    while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+      const rawEvent = buffer.slice(0, boundary);
+      buffer = buffer.slice(boundary + 2);
+      const evt = parseSSEEvent(rawEvent);
+      if (!evt) continue;
+
+      if (evt.data === "[DONE]") {
+        return;
+      }
+      if (evt.event === "ui_action") {
+        try {
+          callbacks.onUIAction && callbacks.onUIAction(JSON.parse(evt.data));
+        } catch (e) {
+          console.warn("Malformed ui_action SSE:", e);
+        }
+      } else if (evt.event === "spoken") {
+        try {
+          callbacks.onSpoken && callbacks.onSpoken(JSON.parse(evt.data));
+        } catch (e) {
+          console.warn("Malformed spoken SSE:", e);
+        }
+      } else {
+        // Default event (no `event:` line): chunk or error
+        try {
+          const parsed = JSON.parse(evt.data);
+          if (parsed.error) {
+            throw new Error(parsed.error);
+          }
+          if (typeof parsed.chunk === "string") {
+            callbacks.onChunk && callbacks.onChunk(parsed.chunk);
+          }
+        } catch (e) {
+          // Swallow malformed payloads silently — keep parsing further events.
+          console.warn("Malformed chunk SSE:", e);
+        }
+      }
+    }
+  }
+}
+
+function parseSSEEvent(raw) {
+  if (!raw) return null;
+  const lines = raw.split("\n");
+  let event = null;
+  let data = "";
+  for (const line of lines) {
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("data:")) {
+      // Per spec, data lines accumulate with newline separators. Our backend
+      // uses single-line data, so trim works.
+      data += line.slice(5).trim();
+    }
+  }
+  return { event, data };
 }
 
 // ── DOM helpers ──────────────────────────────────────────────────────────────
-
 function renderMarkdown(text) {
   return String(text == null ? "" : text)
     .replace(/&/g, "&amp;")
@@ -275,7 +437,7 @@ function typewriterAppend(role, text) {
       i = Math.min(safeText.length, i + 4);
       el.textContent = safeText.slice(0, i);
       scrollToBottom();
-      setTimeout(step, 100); // ~40 char/s with batch of 4
+      setTimeout(step, 100);
     }
 
     if (safeText.length === 0) {
@@ -308,17 +470,23 @@ function setInputEnabled(enabled) {
   if (enabled && inputEl) inputEl.focus();
 }
 
-// ── Public API for other modules (e.g. product detail modal) ─────────────────
-
+// ── Public API for other modules ─────────────────────────────────────────────
 window.Chat = {
   /**
-   * Programmatically send a user message to the budtender.
-   * Behaves identically to typing the text and pressing Send.
+   * Programmatically send a user message to the budtender (e.g. from the
+   * product modal's quick-question chip or the compare tray's "Compare in chat"
+   * button). Expands the drawer if collapsed.
+   *
+   * `extras` is forwarded to the chat API payload — used by the compare
+   * tray to send `compare_product_ids: [n, n, n]` so the backend resolves
+   * the products by ID instead of by free-text name.
    */
-  ask(text) {
+  ask(text, extras = {}) {
     const t = String(text || "").trim();
     if (!t || isSending) return false;
-    sendMessage(t);
+    sendMessage(t, extras);
     return true;
   },
+  expand: expandDrawer,
+  collapse: collapseDrawer,
 };
