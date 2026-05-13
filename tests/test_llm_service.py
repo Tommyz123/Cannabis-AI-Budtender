@@ -433,3 +433,23 @@ def test_prepare_messages_skips_smart_search_when_compare_by_id_signal_present()
     # The legacy smart_search instruction must be absent — the by-ID signal
     # carries the authoritative tool routing.
     assert "COMPARISON REQUEST DETECTED" not in system_msg
+
+
+# ── Showroom mode prompt rule (form known, effect unknown) ──────────────────
+
+def test_information_gathering_prompt_includes_showroom_rule():
+    """When the customer specifies a form but no effect / scenario, the
+    gathering prompt should instruct the AI to SHOWROOM — call smart_search
+    with limit=4 to display sample products, then close with one compound
+    narrowing question. Not "ask only, no search".
+    """
+    from backend.prompts import INFORMATION_GATHERING_PROMPT
+
+    assert "SHOWROOM MODE" in INFORMATION_GATHERING_PROMPT
+    assert "limit=4" in INFORMATION_GATHERING_PROMPT
+    # The compound question allowance — sub-type + strain direction in one ask
+    assert "sub-type" in INFORMATION_GATHERING_PROMPT.lower()
+    assert "indica" in INFORMATION_GATHERING_PROMPT.lower()
+    assert "sativa" in INFORMATION_GATHERING_PROMPT.lower()
+    # The old "ask only" anti-pattern must be marked forbidden
+    assert "without showing any products" in INFORMATION_GATHERING_PROMPT
