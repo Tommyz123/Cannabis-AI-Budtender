@@ -86,7 +86,7 @@ def test_chat_endpoint_with_history(client):
     """Verify chat with conversation history passes history to LLM."""
     captured_args = {}
 
-    def capture_call(history, user_message, product_manager, is_beginner=False):
+    def capture_call(history, user_message, product_manager, is_beginner=False, **_kwargs):
         captured_args["history"] = history
         return "Based on your history, I recommend..."
 
@@ -116,3 +116,132 @@ def test_cors_headers(client):
         },
     )
     assert "access-control-allow-origin" in response.headers
+
+
+def test_get_products(client):
+    """Verify GET /products returns 217 products including sale fields on some."""
+    response = client.get("/products")
+    assert response.status_code == 200
+    data = response.json()
+    assert "products" in data
+    assert "total" in data
+    assert data["total"] == 217
+    assert len(data["products"]) == 217
+    # At least 1 of the first 50 products should carry the optional sale fields.
+    has_sale_field = any(p.get("sale") for p in data["products"][:50])
+    assert has_sale_field, "Expected at least one product in the first 50 to be on sale"
+
+
+def test_chat_includes_ui_action_on_search(client):
+    """Verify /chat populates ui_action when get_recommendation runs a smart_search."""
+
+    def fake_get_recommendation(*args, **kwargs):
+        trace = kwargs.get("trace")
+        if trace is not None:
+            trace["profile"] = {}
+            trace["last_smart_search"] = {
+                "args": {"category": "Flower", "strain_type": "Sativa"},
+                "result": {
+                    "products": [{"id": 1, "s": "Test", "cat": "Flower"}],
+                    "total": 1,
+                },
+            }
+        return "Here you go!"
+
+    with patch("backend.main.get_recommendation", side_effect=fake_get_recommendation):
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "test-session-ui-action",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "I want sativa flower.",
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reply"] == "Here you go!"
+    assert data["ui_action"] is not None
+    assert data["ui_action"]["filters"] == {
+        "category": "Flower",
+        "strain_type": "Sativa",
+    }
+    assert data["ui_action"]["total_matched"] == 1
+
+
+def test_chat_no_ui_action_on_greeting(client):
+    """Verify /chat fast-path greeting bypasses get_recommendation and returns ui_action=null."""
+    # No mock — the router fast-path should short-circuit "hi" without
+    # ever invoking get_recommendation. The response should still be valid
+    # and ui_action should be null.
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-session-greeting",
+            "messages": [],
+            "is_beginner": False,
+            "user_message": "hi",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ui_action"] is None
+
+
+def test_chat_with_removed_filters(client):
+    """Verify /chat accepts removed_filters with empty user_message and injects a system signal."""
+    captured = {}
+
+    def fake_get_recommendation(history, user_message, product_manager, **kwargs):
+        captured["history"] = history
+        captured["user_message"] = user_message
+        trace = kwargs.get("trace")
+        if trace is not None:
+            trace["profile"] = {}
+            trace["last_smart_search"] = {
+                "args": {"category": "Flower"},
+                "result": {
+                    "products": [{"id": 1, "s": "Test Flower", "cat": "Flower"}],
+                    "total": 1,
+                },
+            }
+        return "Sure, opening up beyond Sativa."
+
+    with patch("backend.main.get_recommendation", side_effect=fake_get_recommendation):
+        response = client.post(
+            "/chat",
+            json={
+                "session_id": "test-session-removed-filters",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "",
+                "removed_filters": {"strain_type": "Sativa"},
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["reply"] == "Sure, opening up beyond Sativa."
+    # The synthetic system message must have been prepended to the history.
+    assert any(
+        msg["role"] == "system" and "strain_type=Sativa" in msg["content"]
+        for msg in captured["history"]
+    ), f"Expected a UI SIGNAL system message in history, got: {captured['history']}"
+    # The handler should have synthesized a non-empty user_message internally.
+    assert captured["user_message"].strip() != ""
+
+
+def test_chat_removed_filters_empty_user_message_still_400_when_both_empty(client):
+    """Verify empty user_message AND empty removed_filters still 400s."""
+    response = client.post(
+        "/chat",
+        json={
+            "session_id": "test-session-both-empty",
+            "messages": [],
+            "is_beginner": False,
+            "user_message": "",
+            "removed_filters": {},
+        },
+    )
+    assert response.status_code == 400

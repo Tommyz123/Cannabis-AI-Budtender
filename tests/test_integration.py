@@ -22,7 +22,7 @@ def test_full_chat_flow_normal(client):
     """Full non-beginner chat: request → backend → LLM → response."""
     captured = {}
 
-    def capture(history, user_msg, product_manager, is_beginner=False):
+    def capture(history, user_msg, product_manager, is_beginner=False, *, trace=None):
         captured["user_msg"] = user_msg
         captured["pm"] = product_manager
         return "I recommend Blue Dream for relaxation."
@@ -67,7 +67,7 @@ def test_path_a_unclear(client):
     """Path A: unclear need — LLM is called with product_manager."""
     captured = {}
 
-    def capture(history, user_msg, product_manager, is_beginner=False):
+    def capture(history, user_msg, product_manager, is_beginner=False, *, trace=None):
         captured["called"] = True
         captured["user_msg"] = user_msg
         return "What effect are you looking for today?"
@@ -102,7 +102,7 @@ def test_path_e_price(client):
     """Path E: price-first customer — LLM is called."""
     captured = {}
 
-    def capture(history, user_msg, product_manager, is_beginner=False):
+    def capture(history, user_msg, product_manager, is_beginner=False, *, trace=None):
         captured["user_msg"] = user_msg
         return "Great budget question! What effect are you after first?"
 
