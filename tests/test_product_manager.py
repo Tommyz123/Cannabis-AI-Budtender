@@ -180,3 +180,70 @@ def test_fallback_price_relaxation(pm):
     )
     assert "products" in result
     assert "total" in result
+
+
+# ── get_filter_metadata: storefront sidebar bootstrap ────────────────────
+
+def test_get_filter_metadata_returns_complete_structure(pm):
+    """Sidebar metadata covers categories, brands, strains, effects, ranges."""
+    meta = pm.get_filter_metadata()
+    expected_keys = {
+        "categories", "brands", "strain_types", "effects",
+        "price_range", "thc_pct_range", "thc_mg_range",
+        "on_sale_count", "total",
+    }
+    assert expected_keys.issubset(meta.keys())
+    assert meta["total"] == 217
+
+
+def test_get_filter_metadata_categories_sorted_desc_by_count(pm):
+    """Categories are sorted descending by product count so the storefront
+    can render most-populous first without further work."""
+    meta = pm.get_filter_metadata()
+    counts = [c["count"] for c in meta["categories"]]
+    assert counts == sorted(counts, reverse=True)
+    # All 8 catalog categories present.
+    names = {c["name"] for c in meta["categories"]}
+    assert "Flower" in names
+    assert "Edibles" in names
+    assert "Vaporizers" in names
+
+
+def test_get_filter_metadata_strain_types_includes_canonical_three(pm):
+    """Indica / Sativa / Hybrid are always present as primary strain types."""
+    meta = pm.get_filter_metadata()
+    names = {s["name"] for s in meta["strain_types"]}
+    for canonical in ("Indica", "Sativa", "Hybrid"):
+        assert canonical in names, f"missing canonical strain {canonical}"
+
+
+def test_get_filter_metadata_effects_sorted_desc_by_count(pm):
+    """Effects are returned most-common-first so the sidebar shows
+    high-signal effects (Happy, Relaxed, Energetic) before niche ones."""
+    meta = pm.get_filter_metadata()
+    counts = [e["count"] for e in meta["effects"]]
+    assert counts == sorted(counts, reverse=True)
+    # Validate at least a few well-known effects are present.
+    names = {e["name"] for e in meta["effects"]}
+    assert "Happy" in names
+    assert "Relaxed" in names
+
+
+def test_get_filter_metadata_ranges_well_formed(pm):
+    """Price + THC ranges have min ≤ max and non-negative values."""
+    meta = pm.get_filter_metadata()
+    pr = meta["price_range"]
+    assert 0 <= pr["min"] <= pr["max"]
+    pct = meta["thc_pct_range"]
+    assert 0 <= pct["min"] <= pct["max"]
+    mg = meta["thc_mg_range"]
+    assert 0 <= mg["min"] <= mg["max"]
+
+
+def test_get_filter_metadata_on_sale_count_matches_db(pm):
+    """on_sale_count reflects the seeded ~20% (43 products in this dataset)."""
+    meta = pm.get_filter_metadata()
+    assert meta["on_sale_count"] > 0
+    # The exact number is deterministic from scripts/seed_sale_data.py
+    # (seed=42, 43 products). If the seeder changes, update this number.
+    assert meta["on_sale_count"] == 43

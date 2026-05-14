@@ -10,7 +10,7 @@
         "G - Information Gathering Layer",
         "B - Recommendation Refinement"
     ],
-    "total_cases": 25,
+    "total_cases": 27,
     "test_cases": [
         {
             "id": "tc_C1",
@@ -242,27 +242,27 @@
             "scenario": "information_gathering",
             "difficulty": "easy",
             "priority": "P1",
-            "description": "顾客表达了消费方式（edibles）但无效果/场景信号 → AI 应问效果或场景，不得直接搜索",
+            "description": "顾客表达了消费方式（edibles）但无效果/场景信号 → AI 走 SHOWROOM 模式：先展示几款代表性 edibles，然后用一句话问 sub-type（gummies/chocolate）+ strain 方向（indica/sativa）",
             "input": {
                 "user_message": "I'm interested in trying some edibles.",
                 "conversation_history": []
             },
             "expected_behavior": {
-                "tool_should_be_called": null,
-                "tool_choice_should_be": "none",
-                "note": "AI 已知消费方式（edibles），但效果/场景未知。必须问效果或使用场景，不得调用 smart_search，不得一次问两个问题。"
+                "tool_should_be_called": "smart_search",
+                "tool_choice_should_be": "auto",
+                "note": "AI 已知消费方式（edibles），但效果/场景未知。新规则：调 smart_search(category='Edibles', limit=4) 展示几款代表性产品，然后以一个复合问句收窄方向 —— sub-type（gummies vs chocolate）+ strain（indica/sleep 路线 vs sativa/energy 路线）。不再要求'只问不搜'。"
             },
             "judge_criteria": [
-                "AI 没有调用 smart_search（效果/场景未知时不得搜索）",
-                "AI 问了关于效果、感受或使用场景的问题（如 'what kind of experience', 'what are you looking for', 'relaxing / energizing / focusing', 'any occasion' 等表达均可接受）",
-                "AI 在这一轮只问了一个问题，没有同时再问消费方式",
-                "AI 语气温暖，像一个热情的 budtender 在引导顾客"
+                "AI 调用了 smart_search 且 category 是 Edibles（必须先展示产品）",
+                "AI 在回复中具体列出了产品名（至少 3 个产品），让顾客有具体可对比的对象",
+                "AI 在回复结尾问了一个 narrowing 复合问句，涵盖 sub-type 维度（提到 gummies/chocolate/sub-type 任一关键词）AND/OR strain/effect 方向（提到 indica/sativa/relax/sleep/energy/uplifting 任一关键词）",
+                "AI 语气温暖，像一个热情的 budtender 引导顾客 ——并且没有直接逼顾客二选一（'gummies 还是 chocolate?' 应作为可选方向给出，而非强制）"
             ],
             "tags": [
                 "gathering",
                 "form-known",
                 "effect-unknown",
-                "ask-effect"
+                "showroom-mode"
             ]
         },
         {
@@ -848,6 +848,71 @@
                 "beginner",
                 "context-persistence",
                 "edibles"
+            ]
+        },
+        {
+            "id": "tc_G12",
+            "scenario": "information_gathering",
+            "difficulty": "medium",
+            "priority": "P0",
+            "description": "顾客之前说过 indica，本轮改口说 sativa → AI 必须以当前消息的 strain 为准，不能继续推 indica 产品",
+            "input": {
+                "user_message": "actually, sativa vape instead",
+                "conversation_history": [
+                    {
+                        "role": "user",
+                        "content": "I want some indica flower for relaxing"
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Here are some great indica flower options:\n\n1. **Benzina** by Florist Farms\n   Indica | Size: 7g | Price: $70 | THC: 26%\n2. **Hindu Kush | Jar** by Dank\n   Indica | Size: 3.5g | Price: $53 | THC: 29%"
+                    }
+                ]
+            },
+            "expected_behavior": {
+                "tool_should_be_called": "smart_search",
+                "tool_choice_should_be": "auto",
+                "note": "当前消息明确说 sativa，必须以当前为准。strain_type 必须是 Sativa（不能是 Indica）。category 应为 Vaporizers。不应该把上一轮的 indica 当作仍然有效的偏好。"
+            },
+            "judge_criteria": [
+                "AI 推荐了 Sativa 类产品（不是 Indica）",
+                "AI 推荐了 Vaporizers / 电子烟类产品（响应了 vape 关键词）",
+                "AI 的回复中没有再推荐 indica 产品（不混搭历史 indica 偏好）",
+                "AI 没有反复确认 'wait, you wanted indica?'（应该直接执行当前请求）"
+            ],
+            "tags": [
+                "gathering",
+                "multi-turn",
+                "strain-switch",
+                "router-current-message-priority"
+            ]
+        },
+        {
+            "id": "tc_G13",
+            "scenario": "information_gathering",
+            "difficulty": "medium",
+            "priority": "P1",
+            "description": "顾客只说 strain（indica）没说效果 → AI 应返回 indica 各种 vibe 的产品，不该自动限制到只放松/助眠的子集",
+            "input": {
+                "user_message": "I want an indica vape",
+                "conversation_history": []
+            },
+            "expected_behavior": {
+                "tool_should_be_called": "smart_search",
+                "tool_choice_should_be": "auto",
+                "note": "顾客只说 'indica vape'，没有提到 sleep/relax/calm 等效果词。AI 不应该自动给 smart_search 加 effects=['Relaxed','Sleepy']。返回的产品应是 indica vape 范围内的多样选择，不是 strain × effect 的双重过滤。"
+            },
+            "judge_criteria": [
+                "AI 调用了 smart_search（strain=Indica + category=Vaporizers 已经够多两个信号）",
+                "AI 没有问 'are you looking to relax / sleep / unwind?'（顾客已经给了足够信号，再问是 over-gathering）",
+                "AI 返回的产品列表覆盖至少 2 个不同的效果倾向（如同时有 Relaxed + 其他效果），证明搜索没被过度收窄",
+                "AI 没有把整个推荐写成 'these are perfect for sleep' 的措辞（顾客没说要 sleep，硬挂 sleep 是失实推断）"
+            ],
+            "tags": [
+                "gathering",
+                "single-turn",
+                "strain-no-auto-effect",
+                "router-no-default-effect"
             ]
         }
     ]

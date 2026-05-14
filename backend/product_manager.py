@@ -10,6 +10,7 @@ import sqlite3
 import pandas as pd
 
 from backend.config import DB_PATH, BEGINNER_THC_LIMITS
+from backend.pick_scoring import score_picks as _score_picks_fn, thc_numeric
 
 # THC unit is determined by category (not stored in DB)
 THC_UNIT_BY_CATEGORY: dict[str, str] = {
@@ -69,6 +70,25 @@ def _row_to_compact(row: pd.Series) -> dict:
     pk = row.get("pack_size")
     if pk is not None and not pd.isna(pk):
         record["pk"] = str(int(pk))
+
+    # Sale fields (demo / mock data).
+    #
+    # `is_on_sale` and `discount_pct` are populated by scripts/seed_sale_data.py
+    # — randomly assigned to ~20% of products with RNG_SEED=42. Surfacing
+    # them as a SALE badge is fine for demo/testing; production must wire
+    # in a real promotions data source before going live.
+    #
+    # We intentionally do NOT emit a reconstructed "original" price (`op`):
+    # the DB only stores the actual selling price, and inventing a
+    # pre-discount price for a strikethrough is misleading.
+    sale_flag = row.get("is_on_sale")
+    if sale_flag is not None and pd.notna(sale_flag) and sale_flag:
+        disc_raw = row.get("discount_pct")
+        if disc_raw is not None and pd.notna(disc_raw):
+            disc = int(disc_raw)
+            if disc > 0:
+                record["sale"] = True
+                record["disc"] = disc
     return record
 
 
@@ -89,6 +109,7 @@ class ProductManager:
         self._df: pd.DataFrame = pd.DataFrame()
         self._category_index: dict[str, pd.DataFrame] = {}
         self._all_compact_json: str = "[]"
+        self._pick_meta: dict[int, dict] = {}
 
     def load(self, db_path: str = DB_PATH) -> None:
         """Load products from SQLite and build all indexes."""
@@ -105,6 +126,90 @@ class ProductManager:
         self._df = df
         self._build_category_index()
         self._all_compact_json = self._generate_compact_json(df)
+        self._pick_meta = self._build_pick_meta(df)
+
+    def _build_pick_meta(self, df: pd.DataFrame) -> dict[int, dict]:
+        """Pre-compute per-product metadata used by score_picks.
+
+        Built once at load time so per-call scoring is O(N) over the
+        already-filtered candidate list.
+        """
+        meta: dict[int, dict] = {}
+        for _, row in df.iterrows():
+            pid = int(row["id"])
+            # Parse effects string into a set for fast intersection checks.
+            effects_raw = row.get("effects")
+            if effects_raw is None or pd.isna(effects_raw):
+                effects_set: set[str] = set()
+            else:
+                effects_set = {
+                    tok.strip() for tok in str(effects_raw).split(",") if tok.strip()
+                }
+
+            # THC numeric extraction (None for missing / zero / malformed).
+            level = row.get("thc_level")
+            unit = row.get("thc_unit") or ""
+            thc_val: float | None = None
+            if level is not None and not pd.isna(level):
+                try:
+                    parsed = float(level)
+                    if parsed > 0:
+                        thc_val = parsed
+                except (TypeError, ValueError):
+                    thc_val = None
+
+            price = row.get("price")
+            price_val: float | None = None
+            if price is not None and not pd.isna(price):
+                try:
+                    price_val = float(price)
+                except (TypeError, ValueError):
+                    price_val = None
+
+            price_per_thc: float | None = None
+            if thc_val is not None and price_val is not None and thc_val > 0:
+                price_per_thc = price_val / thc_val
+
+            # Sale meta (demo data from scripts/seed_sale_data.py).
+            # Used by pick_scoring to boost on-sale products to Tier 1/2
+            # with reasons like "25% off this week". Replace with a real
+            # promotions source before production launch.
+            is_on_sale = False
+            sale_flag = row.get("is_on_sale")
+            if sale_flag is not None and pd.notna(sale_flag):
+                is_on_sale = bool(sale_flag)
+
+            disc_pct = 0
+            disc_raw = row.get("discount_pct")
+            if disc_raw is not None and pd.notna(disc_raw):
+                try:
+                    disc_pct = int(disc_raw)
+                except (TypeError, ValueError):
+                    disc_pct = 0
+
+            price_range = row.get("price_range")
+            is_premium = (
+                price_range is not None
+                and not pd.isna(price_range)
+                and str(price_range) == "Premium"
+            )
+
+            experience_level = row.get("experience_level")
+            if experience_level is None or pd.isna(experience_level):
+                experience_level = ""
+            else:
+                experience_level = str(experience_level)
+
+            meta[pid] = {
+                "is_on_sale": is_on_sale,
+                "discount_pct": disc_pct,
+                "is_premium": is_premium,
+                "price_per_thc": price_per_thc,
+                "thc_unit": unit if thc_val is not None else "",
+                "effects_set": effects_set,
+                "experience_level": experience_level,
+            }
+        return meta
 
     def _build_category_index(self) -> None:
         """Build a dict mapping category name → filtered DataFrame."""
@@ -139,6 +244,104 @@ class ProductManager:
     def get_all_compact_json(self) -> str:
         """Return pre-generated compact JSON for all products."""
         return self._all_compact_json
+
+    def get_all_compact_list(self) -> list[dict]:
+        """Return all products as a list of compact dicts.
+
+        Parallel to `get_all_compact_json` but returns the list directly.
+        Used by the `/products` endpoint introduced in Module 4.
+        """
+        return [_row_to_compact(row) for _, row in self._df.iterrows()]
+
+    def get_filter_metadata(self) -> dict:
+        """Return aggregate metadata used to populate the filter sidebar.
+
+        Categories include their product counts so the sidebar / category-bar
+        can show counts inline. Brands and effects come back as lists of
+        `{name, count}` so the UI can either show all (with a search box)
+        or take the top-N.
+
+        THC ranges are split by unit because % flower and mg edibles can't
+        share a single slider — the UI shows two sliders or hides the
+        irrelevant one when a single category is active.
+        """
+        df = self._df
+
+        categories = [
+            {"name": cat, "count": int(len(cdf))}
+            for cat, cdf in self._category_index.items()
+        ]
+        categories.sort(key=lambda c: -c["count"])
+
+        brand_counts = df["brand"].dropna().value_counts()
+        brands = [
+            {"name": str(name), "count": int(cnt)}
+            for name, cnt in brand_counts.items()
+        ]
+
+        strain_counts = df["strain_type"].dropna().value_counts()
+        strain_types = [
+            {"name": str(name), "count": int(cnt)}
+            for name, cnt in strain_counts.items()
+        ]
+
+        from collections import Counter
+
+        effect_counts: Counter[str] = Counter()
+        for raw in df["effects"].dropna():
+            for tok in str(raw).split(","):
+                tok = tok.strip()
+                if tok:
+                    effect_counts[tok] += 1
+        effects = [
+            {"name": name, "count": int(cnt)}
+            for name, cnt in effect_counts.most_common()
+        ]
+
+        prices = df["price"].dropna()
+        price_range = {
+            "min": float(prices.min()) if not prices.empty else 0.0,
+            "max": float(prices.max()) if not prices.empty else 0.0,
+        }
+
+        pct_thc = df.loc[df["thc_unit"] == "%", "thc_level"].dropna()
+        mg_thc = df.loc[df["thc_unit"] == "mg", "thc_level"].dropna()
+        thc_pct_range = {
+            "min": float(pct_thc.min()) if not pct_thc.empty else 0.0,
+            "max": float(pct_thc.max()) if not pct_thc.empty else 0.0,
+        }
+        thc_mg_range = {
+            "min": float(mg_thc.min()) if not mg_thc.empty else 0.0,
+            "max": float(mg_thc.max()) if not mg_thc.empty else 0.0,
+        }
+
+        on_sale_count = int(df["is_on_sale"].fillna(0).astype(bool).sum()) \
+            if "is_on_sale" in df.columns else 0
+
+        return {
+            "categories": categories,
+            "brands": brands,
+            "strain_types": strain_types,
+            "effects": effects,
+            "price_range": price_range,
+            "thc_pct_range": thc_pct_range,
+            "thc_mg_range": thc_mg_range,
+            "on_sale_count": on_sale_count,
+            "total": int(len(df)),
+        }
+
+    def score_picks(
+        self,
+        filtered: list[dict],
+        profile: dict,
+        limit: int = 3,
+    ) -> list[dict]:
+        """Rank `filtered` products and return up to `limit` Top Picks.
+
+        Delegates to `pick_scoring.score_picks` using the pre-computed
+        `_pick_meta`.  Each returned dict carries a `pick_reason` string.
+        """
+        return _score_picks_fn(filtered, self._pick_meta, profile, limit=limit)
 
     def get_beginner_compact_json(self) -> str:
         """
