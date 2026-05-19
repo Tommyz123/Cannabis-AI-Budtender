@@ -10,7 +10,11 @@ import sqlite3
 import pandas as pd
 
 from backend.config import DB_PATH, BEGINNER_THC_LIMITS
-from backend.pick_scoring import score_picks as _score_picks_fn, thc_numeric
+from backend.pick_scoring import (
+    score_picks as _score_picks_fn,
+    assign_reasons_for_ids as _assign_reasons_for_ids_fn,
+    thc_numeric,
+)
 
 # THC unit is determined by category (not stored in DB)
 THC_UNIT_BY_CATEGORY: dict[str, str] = {
@@ -342,6 +346,23 @@ class ProductManager:
         `_pick_meta`.  Each returned dict carries a `pick_reason` string.
         """
         return _score_picks_fn(filtered, self._pick_meta, profile, limit=limit)
+
+    def assign_pick_reasons(
+        self,
+        filtered: list[dict],
+        profile: dict,
+        ids: list[int],
+    ) -> list[dict]:
+        """Attach pick_reason to each id in `ids`, preserving order.
+
+        Used by the UI action builder to render the Top Pick row from the
+        AI's spoken product ids (instead of algorithmic selection). No
+        tier capping; every requested id present in ``filtered`` is
+        returned with a reason.
+        """
+        return _assign_reasons_for_ids_fn(
+            filtered, self._pick_meta, profile, ids,
+        )
 
     def get_beginner_compact_json(self) -> str:
         """

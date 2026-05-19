@@ -177,6 +177,11 @@ async function sendMessage(text, extras = {}) {
           window.ProductGrid.pulseSpoken(ids);
         }
       },
+      onPicks(picks) {
+        if (window.ProductGrid && typeof window.ProductGrid.applyPicks === "function") {
+          window.ProductGrid.applyPicks(picks);
+        }
+      },
     });
 
     return { text: rawText, firstChunkArrived };
@@ -235,6 +240,11 @@ window.addEventListener("filter-chip-removed", async (e) => {
             window.ProductGrid.pulseSpoken(ids);
           }
         },
+        onPicks(picks) {
+          if (window.ProductGrid && typeof window.ProductGrid.applyPicks === "function") {
+            window.ProductGrid.applyPicks(picks);
+          }
+        },
       }
     );
 
@@ -263,15 +273,18 @@ function addToHistory(role, content) {
  * POST /chat/stream and parse the typed SSE response.
  *
  * Wire format (see backend/main.py):
- *   event: ui_action  → filters + picks + total_matched (no spoken ids)
+ *   event: ui_action  → filters + total_matched (picks always empty here)
  *   data:  {chunk: "..."}  → reply text, may arrive in many chunks
  *   event: spoken     → [id, id, ...] ordered list of product ids
+ *   event: picks      → [{id, pick_reason, ...}, ...] Top Pick row content,
+ *                       derived from the spoken ids after reply completes
  *   data:  [DONE]
  *
  * Callbacks
  *   onUIAction(uiAction)  — once (or zero times) per turn
  *   onChunk(text)         — many times
  *   onSpoken(ids)         — once (or zero times)
+ *   onPicks(picks)        — once (or zero times)
  *
  * Always includes the current sidebar state as `manual_filters` so the AI
  * sees what's narrowed; backend uses it as low-priority context.
@@ -332,6 +345,12 @@ async function streamChatAPI(userMessage, extras = {}, callbacks = {}) {
           callbacks.onSpoken && callbacks.onSpoken(JSON.parse(evt.data));
         } catch (e) {
           console.warn("Malformed spoken SSE:", e);
+        }
+      } else if (evt.event === "picks") {
+        try {
+          callbacks.onPicks && callbacks.onPicks(JSON.parse(evt.data));
+        } catch (e) {
+          console.warn("Malformed picks SSE:", e);
         }
       } else {
         // Default event (no `event:` line): chunk or error

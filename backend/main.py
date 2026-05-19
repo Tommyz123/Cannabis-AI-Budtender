@@ -12,6 +12,7 @@ from backend.product_manager import ProductManager
 from backend.llm_service import get_recommendation, get_recommendation_stream
 from backend.router import get_simple_response
 from backend.ui_action_builder import (
+    build_picks_for_spoken,
     build_ui_action,
     build_ui_action_partial,
     scan_spoken_product_ids,
@@ -237,7 +238,9 @@ def chat_stream(request: ChatRequest):
     SSE protocol (typed events):
 
       event: ui_action      ← emitted once, immediately after smart_search
-      data: {filters, picks, total_matched, spoken_product_ids:[]}
+      data: {filters, total_matched, picks:[], spoken_product_ids:[]}
+                              picks is always empty here; the dedicated
+                              picks event below carries the real Top Picks.
 
       data: {"chunk": "..."}                ← repeated, the streamed reply
 
@@ -245,10 +248,17 @@ def chat_stream(request: ChatRequest):
       data: [int, int, ...]   carrying the ordered list of product ids
                               whose names appeared in the reply
 
+      event: picks          ← emitted once after streaming completes,
+      data: [{id, pick_reason, ...}, ...]
+                              Top Pick row content, ordered to match the
+                              AI's mentions; reasons assigned by the
+                              7-tier labeling algorithm. Only emitted
+                              when at least one spoken id was found.
+
       data: [DONE]          ← final sentinel
 
-    Greeting / info-gathering turns (no smart_search) skip the ui_action
-    and spoken events. Fast-path simple replies skip them too.
+    Greeting / info-gathering turns (no smart_search) skip the ui_action,
+    spoken, and picks events. Fast-path simple replies skip them too.
 
     Honors the same ``removed_filters`` and ``manual_filters`` UI signals
     as the non-streaming ``/chat`` endpoint.
@@ -335,7 +345,9 @@ def chat_stream(request: ChatRequest):
             if late:
                 yield late
 
-            # Reply done — scan it for product names and emit spoken event
+            # Reply done — scan it for product names, then emit spoken
+            # and picks events. Picks are derived from spoken ids so the
+            # Top Pick row exactly reflects what the AI said.
             full_reply = "".join(reply_buf)
             if ui_action_emitted:
                 ids = scan_spoken_product_ids(full_reply, trace)
@@ -344,6 +356,14 @@ def chat_stream(request: ChatRequest):
                         f"event: spoken\n"
                         f"data: {json.dumps(ids, separators=(',', ':'))}\n\n"
                     )
+                    picks = build_picks_for_spoken(
+                        trace, _product_manager, ids,
+                    )
+                    if picks:
+                        yield (
+                            f"event: picks\n"
+                            f"data: {json.dumps(picks, separators=(',', ':'))}\n\n"
+                        )
         except Exception as exc:  # noqa: BLE001
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         yield "data: [DONE]\n\n"

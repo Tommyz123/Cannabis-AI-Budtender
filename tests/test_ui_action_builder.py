@@ -10,6 +10,7 @@ Covers the trace → ui_action transformation:
 from backend.product_manager import ProductManager
 from backend.ui_action_builder import (
     VISIBLE_FILTER_FIELDS,
+    build_picks_for_spoken,
     build_ui_action,
     build_ui_action_partial,
     scan_spoken_product_ids,
@@ -215,12 +216,15 @@ def test_partial_returns_none_when_no_smart_search():
     assert build_ui_action_partial({"profile": {}}, _pm) is None
 
 
-def test_partial_includes_filters_picks_total_but_empty_spoken():
-    """Partial omits the reply scan — spoken_product_ids must be empty.
+def test_partial_includes_filters_total_but_empty_picks_and_spoken():
+    """Partial omits the reply scan AND picks selection.
 
     The streaming /chat/stream endpoint emits ui_action BEFORE the reply
-    has streamed in, so spoken can't be known yet. It's filled in later by
-    scan_spoken_product_ids → an `event: spoken` SSE event.
+    has streamed in. Under the spoken-driven Top Pick scheme (see
+    `build_picks_for_spoken`), picks cannot be known until the reply
+    text exists, so the partial payload's `picks` is always [] — the
+    streaming endpoint follows up with a dedicated `picks` SSE event
+    once the reply finishes.
     """
     fake_products = [_make_fake_product(701, "Pre-stream Pick")]
     trace = {
@@ -234,8 +238,8 @@ def test_partial_includes_filters_picks_total_but_empty_spoken():
     assert partial is not None
     assert partial["filters"] == {"category": "Flower", "strain_type": "Sativa"}
     assert partial["total_matched"] == 1
-    assert partial["picks"]  # Tier-7 fallback always yields ≥1 pick
-    # Critical: spoken is always empty in the partial — no reply scanned yet.
+    # Critical: picks and spoken are both deferred to post-stream events.
+    assert partial["picks"] == []
     assert partial["spoken_product_ids"] == []
 
 
@@ -296,3 +300,74 @@ def test_scan_spoken_empty_reply_returns_empty():
         },
     }
     assert scan_spoken_product_ids("", trace) == []
+
+
+# ── build_ui_action: picks are spoken-driven (Phase A contract) ──────────
+
+
+def test_build_ui_action_picks_strictly_subset_of_spoken_ids():
+    """Top Pick row content ⊆ products mentioned in the AI reply.
+
+    Contract guard: filtered set has 4 products, AI reply mentions only
+    2 of them — picks must be exactly those 2, not the algorithm's
+    independent 3-product selection. Products in filtered but not
+    spoken stay in the regular grid only.
+    """
+    products = [
+        _make_fake_product(1001, "Lemon Haze"),
+        _make_fake_product(1002, "Blue Dream"),
+        _make_fake_product(1003, "OG Kush"),
+        _make_fake_product(1004, "Sour Diesel"),
+    ]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 4},
+        },
+    }
+    reply = "Two solid choices: try **Lemon Haze** for daytime, or **OG Kush** to wind down."
+    ua = build_ui_action(trace, reply, _pm)
+    assert ua is not None
+    pick_ids = [p["id"] for p in ua["picks"]]
+    spoken_ids = ua["spoken_product_ids"]
+    # Order of picks follows mention order (which matches spoken).
+    assert pick_ids == spoken_ids
+    # Strict subset of spoken — never algorithm-selected products.
+    assert set(pick_ids).issubset(set(spoken_ids))
+    # Every pick carries a reason.
+    for p in ua["picks"]:
+        assert "pick_reason" in p and isinstance(p["pick_reason"], str)
+
+
+def test_build_ui_action_picks_empty_when_reply_mentions_no_products():
+    """No product names in reply → picks list is empty (Top Pick row hidden)."""
+    products = [_make_fake_product(2001, "Lemon Haze")]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 1},
+        },
+    }
+    reply = "Let me know if you want something calming or energizing."
+    ua = build_ui_action(trace, reply, _pm)
+    assert ua is not None
+    assert ua["picks"] == []
+    assert ua["spoken_product_ids"] == []
+
+
+def test_build_picks_for_spoken_returns_empty_when_spoken_empty():
+    """Helper used by the streaming endpoint returns [] for empty ids."""
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {
+                "products": [_make_fake_product(3001, "Lemon Haze")],
+                "total": 1,
+            },
+        },
+    }
+    assert build_picks_for_spoken(trace, _pm, []) == []
+    assert build_picks_for_spoken({}, _pm, [3001]) == []

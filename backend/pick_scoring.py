@@ -115,12 +115,19 @@ def _tier_for_product(
     profile: dict,
     mapped_intents: list[tuple[str, str]],
     best_value_id: int | None,
+    min_intent_matches: int = 2,
 ) -> tuple[int, str, str] | None:
     """Compute the highest-priority tier for one product.
 
     Returns a tuple of (tier_number, reason_key, reason_template_text) or None
     if the product qualifies for no tier 1-6 (in which case it's still eligible
     for Tier 7 fallback).
+
+    ``min_intent_matches`` controls the Tier 4 (fit) threshold. The default
+    of 2 preserves ``score_picks`` selection behavior — only products that
+    clearly match the user's intent count as "fit" when the algorithm is
+    choosing picks. ``assign_reasons_for_ids`` lowers this to 1 because
+    the products were already chosen by the AI; the tier is just labeling.
     """
     is_on_sale = bool(meta.get("is_on_sale"))
     disc = int(meta.get("discount_pct") or 0)
@@ -137,7 +144,7 @@ def _tier_for_product(
     if best_value_id is not None and prod.get("id") == best_value_id:
         return (3, "best_value", "Best value in this filter")
 
-    # Tier 4: fit (>= 2 intent effects match)
+    # Tier 4: fit (>= min_intent_matches intent effects match)
     if mapped_intents:
         effects_set = meta.get("effects_set") or set()
         matched = [
@@ -145,7 +152,7 @@ def _tier_for_product(
             for intent, db_effect in mapped_intents
             if db_effect in effects_set
         ]
-        if len(matched) >= 2:
+        if len(matched) >= min_intent_matches:
             top_effect = matched[0][0]
             return (4, "fit", f"Matches your {top_effect} vibe")
 
@@ -263,3 +270,61 @@ def score_picks(
             picks.append({**prod, "pick_reason": "Recommended for you"})
 
     return picks
+
+
+def assign_reasons_for_ids(
+    filtered: list[dict],
+    pick_meta: dict[int, dict],
+    profile: dict,
+    ids: list[int],
+) -> list[dict]:
+    """Attach `pick_reason` to each product in `ids`, preserving order.
+
+    Unlike ``score_picks``, this performs NO selection or tier capping —
+    every requested id that exists in ``filtered`` is returned with a
+    reason. Used by the Top Pick row when the AI's reply has already
+    chosen the products (via ``spoken_product_ids``), so the algorithm's
+    job is reduced to labeling rather than picking.
+
+    Products absent from ``filtered`` are silently skipped. Products
+    without ``pick_meta`` or with no qualifying tier fall back to a
+    generic reason.
+    """
+    if not ids or not filtered:
+        return []
+
+    profile = profile or {}
+    mapped_intents = _mapped_intent_effects(profile)
+
+    by_id = {prod.get("id"): prod for prod in filtered if prod.get("id") is not None}
+    # Best-value is computed over the spoken subset, not the full filtered
+    # set. The AI already chose these products; "best value in this filter"
+    # should mean "cheapest per THC among what was recommended."
+    spoken_subset = [by_id[pid] for pid in ids if pid in by_id]
+    best_value_id = _resolve_best_value_id(spoken_subset, pick_meta)
+
+    out: list[dict] = []
+    seen: set[int] = set()
+    for pid in ids:
+        if pid in seen:
+            continue
+        prod = by_id.get(pid)
+        if prod is None:
+            continue
+        seen.add(pid)
+        meta = pick_meta.get(pid)
+        if not meta:
+            out.append({**prod, "pick_reason": "Recommended for you"})
+            continue
+        # min_intent_matches=1: products were chosen by the AI; even a
+        # single matching intent effect is enough to label the fit.
+        tier_result = _tier_for_product(
+            prod, meta, profile, mapped_intents, best_value_id,
+            min_intent_matches=1,
+        )
+        if tier_result is None:
+            out.append({**prod, "pick_reason": "Recommended for you"})
+        else:
+            _, _, reason_text = tier_result
+            out.append({**prod, "pick_reason": reason_text})
+    return out

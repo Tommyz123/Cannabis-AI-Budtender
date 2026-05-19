@@ -151,6 +151,22 @@ const ProductGrid = (() => {
     });
   }
 
+  // Late Top Pick row population (called after the streaming reply
+  // completes, when picks are derived from the AI's spoken product ids).
+  // Writes picks into the Store and re-renders the pick row and grid so
+  // `.is-pick` highlighting on the main grid stays in sync.
+  function applyPicks(picks) {
+    const list = Array.isArray(picks) ? picks : [];
+    window.Store.setPicks(list);
+    renderPicks();
+    renderGrid();
+    if (gridTitleEl) {
+      const picksVisible = list.length > 0;
+      const filteredCount = window.Store.filteredProducts().length;
+      gridTitleEl.hidden = !(picksVisible && filteredCount > 0);
+    }
+  }
+
   function pulseSpoken(ids) {
     const list = Array.isArray(ids) ? ids : [];
     local.spokenIds = new Set(list);
@@ -769,7 +785,7 @@ const ProductGrid = (() => {
     return escapeHTML(s);
   }
 
-  return { init, applyUIAction, pulseSpoken };
+  return { init, applyUIAction, applyPicks, pulseSpoken };
 })();
 
 window.ProductGrid = ProductGrid;

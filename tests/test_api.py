@@ -456,11 +456,58 @@ def test_chat_stream_emits_ui_action_when_search_runs(client):
     # ui_action event present and contains the expected filter payload.
     assert "event: ui_action" in body
     assert "\"strain_type\":\"Sativa\"" in body or "\"strain_type\": \"Sativa\"" in body
+    # ui_action's picks field must be empty under the spoken-driven scheme
+    # (picks arrive via a separate `picks` event after the reply finishes).
+    assert "\"picks\":[]" in body
     # spoken event fires after we scan the reply for product names.
     assert "event: spoken" in body
+    # picks event fires after spoken when at least one product was named.
+    assert "event: picks" in body
+    # The picks payload must contain a pick_reason for the spoken product.
+    assert "pick_reason" in body
     # Reply text appears in chunk(s).
     assert "Test Sativa Flower" in body
     # Terminator present.
+    assert "data: [DONE]" in body
+
+
+def test_chat_stream_skips_picks_event_when_reply_mentions_no_products(client):
+    """No product name in the reply → no `event: picks` (and no `event: spoken`).
+
+    Lock the contract: the Top Pick row should NOT be populated when the AI
+    never names a product (e.g. info-gathering follow-ups after a search).
+    """
+    def fake_stream(history, user_message, product_manager, **kwargs):
+        trace = kwargs.get("trace")
+        if trace is not None:
+            trace["profile"] = {}
+            trace["last_smart_search"] = {
+                "args": {"category": "Flower"},
+                "result": {
+                    "products": [
+                        {"id": 1, "s": "Test Sativa Flower", "cat": "Flower"},
+                    ],
+                    "total": 1,
+                },
+            }
+        yield "Want something calming or energizing?"
+
+    with patch("backend.main.get_recommendation_stream", side_effect=fake_stream):
+        response = client.post(
+            "/chat/stream",
+            json={
+                "session_id": "stream-no-mention",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "what should I get",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.text
+    assert "event: ui_action" in body
+    assert "event: spoken" not in body
+    assert "event: picks" not in body
     assert "data: [DONE]" in body
 
 

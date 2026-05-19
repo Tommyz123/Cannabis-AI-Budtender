@@ -475,7 +475,38 @@ _EFFECT_INTENT_SIGNALS = re.compile(
     r"pain|stress|anxious|unwind|chill|uplifted|sedated)\b",
     re.IGNORECASE,
 )
-_STRAIN_PREF = re.compile(r"\b(indica|sativa|hybrid)\b", re.IGNORECASE)
+# Strain detection with common typo tolerance. Keys are lowercase variants
+# the router accepts; values are the canonical lowercase strain word used
+# in profile.strain_preference (capitalize for smart_search args). LLMs
+# are surprisingly forgiving of typos but the fast path was not — leading
+# to cases like "hybird flower" missing fast-path entirely and the LLM
+# then hallucinating a wrong-strain product in its reply.
+_STRAIN_TYPO_MAP = {
+    "hybrid": "hybrid",
+    "hybird": "hybrid",   # transposed i/r — most common
+    "hybrd": "hybrid",    # dropped i
+    "hybride": "hybrid",  # extra e
+    "indica": "indica",
+    "indca": "indica",    # dropped i
+    "indeca": "indica",   # e for i
+    "indika": "indica",   # k for c
+    "sativa": "sativa",
+    "sattiva": "sativa",  # doubled t
+    "satvia": "sativa",   # transposed iv
+    "sativ": "sativa",    # dropped trailing a
+}
+_STRAIN_PATTERN = re.compile(
+    r"\b(" + "|".join(_STRAIN_TYPO_MAP.keys()) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _normalize_strain(token: str) -> str | None:
+    """Map any accepted strain spelling (incl. common typos) to canonical lowercase."""
+    return _STRAIN_TYPO_MAP.get(token.lower())
+
+
+_STRAIN_PREF = _STRAIN_PATTERN  # backward-compat alias for in-file use
 _RECOMMENDED_PATTERN = re.compile(r"\*\*([^*]+)\*\*\s+by\s+\S+")
 _FEEDBACK_PRICE = re.compile(
     r"\b(too expensive|cheaper|more affordable|lower price|budget)\b", re.IGNORECASE
@@ -533,9 +564,13 @@ def extract_profile_signals(user_message: str, history: list[dict]) -> dict:
     if effect_matches:
         profile["effect_intent"] = list({e.lower() for e in effect_matches})
 
-    strain_matches = _STRAIN_PREF.findall(user_text)
+    strain_matches = _STRAIN_PATTERN.findall(user_text)
     if strain_matches:
-        profile["strain_preference"] = list({s.lower() for s in strain_matches})
+        normalized = {
+            _normalize_strain(s) for s in strain_matches if _normalize_strain(s)
+        }
+        if normalized:
+            profile["strain_preference"] = sorted(normalized)
 
     recommended_matches = _RECOMMENDED_PATTERN.findall(assistant_text)
     if recommended_matches:
@@ -654,13 +689,11 @@ def try_extract_search_params(
     strain_type: str | None = None
 
     def _detect_strain(text: str) -> str | None:
-        if re.search(r"\bindica\b", text, re.I):
-            return "Indica"
-        if re.search(r"\bsativa\b", text, re.I):
-            return "Sativa"
-        if re.search(r"\bhybrid\b", text, re.I):
-            return "Hybrid"
-        return None
+        m = _STRAIN_PATTERN.search(text)
+        if not m:
+            return None
+        canon = _normalize_strain(m.group(1))
+        return canon.capitalize() if canon else None
 
     strain_in_current = _detect_strain(msg_lower)
     strain_type = strain_in_current or _detect_strain(user_history.lower())

@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-04-02 | 项目阶段: 黄金数据集新增 beginner-ready 直搜用例，持续修正信息收集路由
+最后更新: 2026-05-18 | 项目阶段: Top Pick 区 spoken 驱动 + pick_reason 差异化 + strain typo 容错 + ANTI_HALLUCINATION + STRAIN_EFFECT_CONFLICT 意图切换
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -98,6 +98,8 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 - `ProductManager.get_all_compact_json() → str` — 全量产品 compact JSON
 - `ProductManager.get_beginner_compact_json() → str` — 新手安全过滤产品 JSON（含降级策略）
 - `ProductManager.search_products(query, category, effects, exclude_effects, exclude_categories, min_thc, max_thc, max_price, budget_target, time_of_day, activity_scenario, unit_weight, list_sub_types, limit, is_beginner) → dict` — 多条件产品搜索；unit_weight 支持精确匹配；total 返回实际命中数；有 budget_target 时按价格距离升序；free-text query 覆盖 product/effects/flavor_profile/hardware_type/description；is_beginner=True 时套用新手安全过滤
+- `ProductManager.score_picks(filtered, profile, limit=3) → list[dict]` — 7-tier 算法独立选 ≤limit 个 Top Pick（算法选 + 打 reason）
+- `ProductManager.assign_pick_reasons(filtered, profile, ids) → list[dict]` — 给指定 id 列表打 pick_reason（不选、不 cap），用于 spoken 驱动的 Top Pick 行；best_value 在 ids 子集内算；Tier 4 阈值放宽到 ≥1 effect 匹配
 - `ProductManager.get_category_summary_json() → str` — 返回品类数量统计 JSON
 - `ProductManager.get_product_by_id(product_id) → dict | None` — 按 ID 返回单个产品
 - `ProductManager.total_count → int` — 已加载产品数
@@ -110,6 +112,8 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
   - `AGE_COMPLIANCE_PROMPT` — 年龄验证规则
   - `NON_CONSENSUAL_USE_PROMPT` — 非自愿用药拦截
   - `BEGINNER_SAFETY_PROMPT` — 新手安全规则
+  - `ANTI_HALLUCINATION_PROMPT` — 禁止 LLM 推荐 search 结果之外的产品（治本，防 strain type 幻觉）
+  - `STRAIN_EFFECT_CONFLICT_PROMPT` — 用户上文锁定 strain 后，新消息出现对立 effect 关键词（如 indica + energy / sativa + sleep）时，识别为意图切换：强制清空旧 strain 锁、立即用纠正后的 strain_type 调 smart_search，禁止反问"是否切类目"
   - `BEGINNER_READY_SEARCH_PROMPT` — 新手未指定 form，但已给出 gentle/sleep-friendly 首次体验诉求时，禁止停在过渡话术，要求立即按 beginner-safe edible 方向搜索
   - `INFORMATION_GATHERING_PROMPT` — 信息收集规则
   - `OCCASION_READY_SEARCH_PROMPT` — “date night / social”等场景 + vibe/guardrail 已完整时，禁止继续追问 form，要求立即搜索
@@ -119,6 +123,9 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
   - `_SALES_PROMPT` — 销售流程主规则
 
 ### backend/router.py — 请求路由与分类（新增）
+- `_STRAIN_TYPO_MAP: dict` — strain typo 归一化映射（hybird→hybrid, sattiva→sativa, indca→indica 等）；fast-path 和 profile 提取共用
+- `_STRAIN_PATTERN: re.Pattern` — 匹配所有合法 strain 拼写（标准 + typo）
+- `_normalize_strain(token) → str | None` — 把任何变体（含 typo）归一化为 lowercase 标准词
 - `get_simple_response(user_message) → str | None` — 快路径，返回预设回复或 None
 - `is_medical_query(user_message) → bool` — 检测医疗查询
 - `is_vague_query(user_message) → bool` — 检测模糊查询
@@ -148,9 +155,21 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 - `get_recommendation(history, user_message, product_manager, is_beginner=False) → str` — Agent Loop 入口
 - `_prepare_messages(...)` 仍保留价格反馈、价格 refinement、vape/flower 二选一、产品对比、负面强度约束等临时注入；`occasion-ready` 规则已迁移至 `prompts.py` 独立模块
 
+### backend/ui_action_builder.py — UI action 载荷构造
+- `build_ui_action(trace, reply_text, product_manager) → dict | None` — 非流式 ui_action 构造；picks 由 spoken_product_ids 驱动（不再算法独立选）
+- `build_ui_action_partial(trace, product_manager) → dict | None` — 流式 partial 阶段：filters / total_matched 立即可得，**picks 与 spoken_product_ids 均为 `[]`**（延后到 reply 流完后由专门事件填充）
+- `build_picks_for_spoken(trace, product_manager, spoken_ids) → list[dict]` — 给流式端点用，由 spoken_ids 算出带 pick_reason 的 picks 列表
+- `scan_spoken_product_ids(reply_text, trace) → list[int]` — 扫 reply 找产品名 → 返回 id 列表
+
+### backend/pick_scoring.py — Top Pick 打分与文案
+- `score_picks(filtered, pick_meta, profile, limit=3)` — 7-tier 算法独立选 ≤limit 个；Tier 4 要求 ≥2 effect 匹配（保证选出的 fit 真高匹配）
+- `assign_reasons_for_ids(filtered, pick_meta, profile, ids)` — 给指定 ids 打 pick_reason，best_value 限定在 ids 子集，Tier 4 阈值放宽到 ≥1 effect 匹配
+- `_tier_for_product(..., min_intent_matches=2)` — 接 min_intent_matches 参数，控制 Tier 4 阈值
+
 ### backend/main.py — FastAPI 应用
 - `GET /health` — 返回 {status, products_loaded}
 - `POST /chat` — 接收 ChatRequest，返回 ChatResponse
+- `POST /chat/stream` — SSE 流式版本；事件类型：`event: ui_action`（filters + total_matched，picks 恒为 `[]`）→ `data: {chunk}` 多次 → `event: spoken`（reply 提到的 ids）→ `event: picks`（带 pick_reason 的 picks 列表）→ `data: [DONE]`
 - `lifespan` — 启动时从 SQLite 加载产品（通过 ProductManager）
 
 ### frontend/ — Chat Widget

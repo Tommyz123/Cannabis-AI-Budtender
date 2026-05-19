@@ -3,6 +3,48 @@
 > 按时间倒序记录每次代码修改、优化、评估。只追加，不修改历史记录。
 > 格式：`## [YYYY-MM-DD] 类型 | 简述`
 
+## [2026-05-18] 新增 | Eval 测试集维护规则 + tc_AH1/tc_AH2 anti-hallucination 回归保护
+
+- **变更内容**：
+  1. `CLAUDE.md` / `agents.md` — 新增 `## Eval 测试集维护规则（每次迭代修复后强制判断）` 区段：定义"值得加 eval"的 4 个触发条件 + "不值得"的 4 类情况 + 收尾汇报格式 + 禁止擅自写入 dataset
+  2. `golden_dataset_v2.json` — 新增 2 个 case（total_cases: 27 → 29）：
+     - `tc_AH1`：正确拼写 "hybrid flower" → 必须只推 Hybrid 产品（防 LLM 跨株型幻觉，ANTI_HALLUCINATION_PROMPT 回归锁）
+     - `tc_AH2`：typo "hybird flower" → fast-path 容错命中 + 全 Hybrid 推荐（防 _STRAIN_TYPO_MAP 被改坏 + LLM 不被 typo 误导）
+- **触发来源**：本次 hybird LLM Indica 幻觉修复是首个按新规则应用的案例 —— 跨模块（router + prompts）+ prompt 改动 + 用户实际遇到的 bug，全部满足新规则的"值得加 eval"触发条件
+- **涉及文件**：`CLAUDE.md`、`agents.md`、`golden_dataset_v2.json`
+- **测试结果**：dataset schema 校验通过（必填字段、tool_should_be_called='smart_search'、judge_criteria 4 条）；eval 真跑由主公按需触发
+
+## [2026-05-17] 修复 | hybird typo 触发 LLM 推荐 Indica 幻觉 — fast-path typo 容错 + anti-hallucination prompt
+
+- **变更内容**：
+  1. `backend/router.py` — 新增 `_STRAIN_TYPO_MAP` + `_STRAIN_PATTERN` + `_normalize_strain()`，覆盖 hybrid/indica/sativa 的常见 typo（hybird, hybrd, hybride, indca, indeca, indika, sattiva, satvia, sativ）；`_detect_strain()` 和 `extract_profile_signals()` 改用新正则 + 归一化
+  2. `backend/prompts.py` — 新增 `ANTI_HALLUCINATION_PROMPT` 模块，硬性约束 LLM 只能从最近一次 smart_search 的 `products` 数组里推荐，禁止从训练数据/前一轮回忆产品名；strain_type 必须一致；产品名 verbatim 复制 `s` 字段；注入到 SYSTEM_PROMPT 在 BEGINNER_SAFETY 之后
+  3. `tests/test_router.py` — 新增 3 个测试锁定 typo 容错：hybird → Hybrid，sattiva → Sativa，indca → Indica
+- **根因**：用户输入 "what do you for hybird flower"，fast-path 严格正则 `\bhybrid\b` 不匹配 typo，返回 None；LLM 虽然正确理解 typo 并调 `smart_search(category='Flower', strain_type='Hybrid', limit=4)`，但在文字回复时无视 search 返回的 4 个 Hybrid 产品，从训练数据"回忆"出 Purple Daddy by Zizzle（DB 里真实存在的 Indica）→ 100% LLM 幻觉
+- **修复策略**：D（typo 容错）治标但减少 LLM 介入概率；A（anti-hallucination prompt）治本，作为兜底防止 LLM 自由发挥
+- **涉及文件**：`backend/router.py`、`backend/prompts.py`、`tests/test_router.py`
+- **测试结果**：
+  - `pytest tests/` → 144/144 通过（新增 3 个 typo 测试）
+  - 端到端 curl `/chat/stream` "what do you for hybird flower" 跑 3 次：全部 ui_action 显示 strain_type=Hybrid，推荐的产品全部为 Hybrid（Apple Fritter / Biscotti / Grandi Guava / Gushers / Frosted Infused Flower），无 Indica 幻觉，Top Pick 区有产品 + 差异化 pick_reason
+
+## [2026-05-17] 重构 | Top Pick 区改为 AI-spoken 驱动 + reason 文案差异化
+
+- **变更内容**：
+  1. `backend/pick_scoring.py` — 新增 `assign_reasons_for_ids(filtered, pick_meta, profile, ids)`：给指定 id 列表打 reason，不做 selection / cap；best_value 在 spoken 子集内算；`_tier_for_product` 新增 `min_intent_matches` 参数（默认 2 保 score_picks 不变，assign 模式传 1）
+  2. `backend/product_manager.py` — 新增 `ProductManager.assign_pick_reasons(filtered, profile, ids)` 转发
+  3. `backend/ui_action_builder.py` — picks 改为 spoken 驱动：`build_ui_action_partial` 的 picks 恒为 `[]`；新增 `build_picks_for_spoken(trace, pm, spoken_ids)`；`build_ui_action`（非流式）的 picks 改为基于 spoken
+  4. `backend/main.py` — 流式协议新增 `event: picks` 事件，在 `event: spoken` 之后发；含 `pick_reason` 的 picks 列表
+  5. `frontend/state.js` — 新增 `setPicks(picks)` 方法 + 暴露到 Store
+  6. `frontend/chat.js` — SSE 消费加 `event: picks` 处理；streamFlow callbacks 加 `onPicks`
+  7. `frontend/product-grid.js` — 新增 `applyPicks(picks)`：写 Store → 重渲染 picks + grid
+  8. `tests/test_ui_action_builder.py` — 改旧测试断言（partial picks 必为空），新增 3 个测试锁定方案 A 契约
+  9. `tests/test_api.py` — 新增 2 个流式测试：spoken 非空 → 必发 picks 事件；reply 无产品名 → 无 picks/spoken 事件
+- **协议变化**：`event: ui_action` 的 picks 字段恒为 `[]`；新增 `event: picks` 在 reply 流完后发；视觉上 Top Pick 区延后 0.5-1.5s 出现
+- **涉及文件**：见上 9 处
+- **测试结果**：
+  - `pytest tests/` → 141/141 通过（新增 5 个测试）
+  - 端到端 curl `/chat/stream` 验证：spoken/picks 事件正常 emit，pick_reason 文案差异化（"Matches your sleep vibe" / "Best value in this filter"），不再全是 "Recommended for you"
+
 ## [2026-04-11] 修复 | tc_M1 多轮上下文 — form 确认不调工具 + beginner 自动检测
 
 - **变更内容**：
@@ -691,3 +733,20 @@
 **测试结果：**
 - `pytest tests/ -q` → 65 passed（全过）
 - `eval/run_eval.py` → 23/24 通过（tc_G11 ✅，tc_C3 为 LLM 合规措辞随机性问题，与本分支无关）
+
+## [2026-05-18] 新增 | STRAIN_EFFECT_CONFLICT_PROMPT 意图切换识别 + tc_SEC1 eval 锁定
+
+**变更内容：**
+- `backend/prompts.py`：新增 `STRAIN_EFFECT_CONFLICT_PROMPT` 模块。当用户上文已锁定 strain 类目（indica/sativa），新消息出现对立 effect 关键词（如 indica 锁 + "energy"/"focus" 或 sativa 锁 + "sleep"/"sedating"）时，识别为意图切换，要求 LLM 立即调 smart_search 切到纠正后的 strain_type + 新 effect，禁止反问"要不要切类目"、禁止说"我们不carry"
+- `backend/prompts.py`：将新模块注入 `SYSTEM_PROMPT` 组装链，位置在 `ANTI_HALLUCINATION_PROMPT` 之后、`BEGINNER_READY_SEARCH_PROMPT` 之前
+- `golden_dataset_v2.json`：新增 `tc_SEC1`（total_cases 29→30），锁定"indica flower → do you have something energy"场景下 AI 必须直接调 smart_search(strain_type='Sativa') + 不出现 Indica 产品 + 不出现被动话术
+- `planning/context.md`：模块索引补充 `STRAIN_EFFECT_CONFLICT_PROMPT` 一行；最后更新日期 2026-05-17 → 2026-05-18
+
+**原因：** 浏览器复测发现，用户先说 "indica flower"，AI 推 indica 产品后用户切到 "do you have something energy"，原行为是 AI 回"我们不carry indica + energy 的"并被动反问要不要切类目。这是把用户的"意图切换"误读为"在 indica 类目内继续追加约束"。新 prompt 让 LLM 把对立 effect 识别为旧 strain 锁作废信号。
+
+**涉及文件：** `backend/prompts.py`, `golden_dataset_v2.json`, `planning/context.md`
+
+**测试结果：**
+- `pytest tests/ -q` → 144 passed（无回退）
+- 端到端浏览器复测：等主公验证（用例：indica flower → something keep away → do you have something energy，期望第 3 轮直接给 sativa 产品）
+- eval tc_SEC1：尚未运行，待主公决策

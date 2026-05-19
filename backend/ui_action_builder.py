@@ -23,11 +23,17 @@ def build_ui_action(
 ) -> dict | None:
     """Construct the full ui_action dict from a populated trace.
 
+    Top Pick selection is driven by the AI's reply: any product whose
+    name appears in ``reply_text`` becomes a Top Pick, with its reason
+    assigned by ``ProductManager.assign_pick_reasons``. Products that
+    matched the search but were not mentioned in the reply are excluded
+    from picks (they still appear in the regular product grid).
+
     Args:
         trace: The out-param dict populated by `get_recommendation`. Expected
             keys: `last_smart_search` (with `args` and `result`) and `profile`.
         reply_text: Final assistant reply, scanned for product-name mentions.
-        product_manager: ProductManager instance used to score Top Picks.
+        product_manager: ProductManager instance used to label Top Picks.
 
     Returns:
         A dict with `filters`, `picks`, `spoken_product_ids`, and
@@ -38,8 +44,10 @@ def build_ui_action(
         return None
     last = trace.get("last_smart_search", {}) or {}
     filtered_products = (last.get("result") or {}).get("products", []) or []
-    partial["spoken_product_ids"] = _scan_reply_for_product_ids(
-        reply_text, filtered_products
+    spoken_ids = _scan_reply_for_product_ids(reply_text, filtered_products)
+    partial["spoken_product_ids"] = spoken_ids
+    partial["picks"] = build_picks_for_spoken(
+        trace, product_manager, spoken_ids,
     )
     return partial
 
@@ -48,14 +56,18 @@ def build_ui_action_partial(
     trace: dict,
     product_manager,
 ) -> dict | None:
-    """Like ``build_ui_action`` but without the spoken-product-name scan.
+    """Like ``build_ui_action`` but without picks or spoken ids.
 
-    Used by the streaming endpoint, which knows the filters and picks the
-    moment ``smart_search`` resolves but doesn't have the full reply text
-    until streaming completes. The streaming endpoint emits this partial
-    payload first (so the storefront can animate chips/grid/picks
-    immediately) and follows up with a ``spoken`` event once the reply is
-    complete (see ``scan_spoken_product_ids``).
+    Used by the streaming endpoint, which knows the filters the moment
+    ``smart_search`` resolves but cannot determine picks until the full
+    reply text is available (picks are derived from the AI's spoken
+    product ids). The streaming endpoint emits this partial payload
+    first (so the storefront can animate chips/grid immediately) and
+    follows up with ``spoken`` + ``picks`` events once the reply is
+    complete.
+
+    ``picks`` is always an empty list here; the streaming endpoint emits
+    a separate ``picks`` event after the reply finishes.
 
     Returns ``None`` when no smart_search ran this turn.
     """
@@ -63,22 +75,42 @@ def build_ui_action_partial(
     if not last:
         return None
 
-    profile = trace.get("profile", {}) or {}
     args = last.get("args", {}) or {}
     result = last.get("result", {}) or {}
 
     visible_filters = {
         k: v for k, v in args.items() if k in VISIBLE_FILTER_FIELDS and v
     }
-    filtered_products = result.get("products", []) or []
-    picks = product_manager.score_picks(filtered_products, profile, limit=3)
 
     return {
         "filters": visible_filters,
-        "picks": picks,
+        "picks": [],
         "spoken_product_ids": [],
         "total_matched": result.get("total", 0),
     }
+
+
+def build_picks_for_spoken(
+    trace: dict,
+    product_manager,
+    spoken_ids: list[int],
+) -> list[dict]:
+    """Build the picks list for the Top Pick row from spoken product ids.
+
+    Each id present in the smart_search result is returned with a
+    ``pick_reason`` assigned by the 7-tier labeling algorithm. Returns
+    an empty list when ``spoken_ids`` is empty or no smart_search ran.
+    """
+    if not spoken_ids:
+        return []
+    last = trace.get("last_smart_search")
+    if not last:
+        return []
+    profile = trace.get("profile", {}) or {}
+    filtered_products = (last.get("result") or {}).get("products", []) or []
+    return product_manager.assign_pick_reasons(
+        filtered_products, profile, spoken_ids,
+    )
 
 
 def scan_spoken_product_ids(reply_text: str, trace: dict) -> list[int]:

@@ -174,6 +174,16 @@ const Store = (() => {
     notify({ type: "sort_changed", sort });
   }
 
+  // Late-bound Top Pick update from the streaming `picks` SSE event,
+  // which fires after the reply text has streamed (so the Top Pick row
+  // can be populated from the AI's spoken product ids rather than from
+  // algorithmic pre-selection).
+  function setPicks(picks) {
+    state.picks = Array.isArray(picks) ? picks : [];
+    state.pickIds = new Set(state.picks.map((p) => p.id));
+    notify({ type: "picks_updated" });
+  }
+
   // ── Predicates / selectors ────────────────────────────────────────────
   function thcNumeric(thcStr) {
     if (!thcStr) return null;
@@ -278,6 +288,7 @@ const Store = (() => {
     removeFilter,
     resetAll,
     applyAIFilters,
+    setPicks,
     setSort,
     matchProduct,
     filteredProducts,

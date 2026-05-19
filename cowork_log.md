@@ -19,3 +19,15 @@
 - 决策：回滚 main 到 3967d4a 干净基线，今天工作归档为独立分支 verdant-archive（commit 18734f8）
 - 验证 eval：25/25 100% pass（compliance 6/6 + gathering 11/11 + refinement 6/6 + fallback 1/1 + multi_turn 1/1，平均 4.0s/case）
 - Tag: archive/2026-05-12-clean-baseline @ 3967d4a
+
+[2026-05-17 21:50] 重构 | Top Pick 区 + 流式协议 | Top Pick 改为 AI-spoken 驱动（picks ⊆ chat 提到的产品），新增 event: picks 流式事件，pick_reason 文案差异化。9 处文件改动（4 后端 + 3 前端 + 2 测试），141 测试全过，端到端 curl 验证通过。
+
+[2026-05-17 22:35] 修复 | hybird typo + LLM strain 幻觉 | 添加 strain typo 容错正则 (_STRAIN_TYPO_MAP) + ANTI_HALLUCINATION_PROMPT 模块。根因：fast-path 严格 \bhybrid\b 不匹配 typo，LLM 工具调用正确但文字回复无视 search 结果幻觉出 Purple Daddy (Indica)。3 个 router 测试 + 端到端 curl×3 全过。
+
+[2026-05-18 00:05] 新增 | Eval 维护规则 + 2 个回归 case | CLAUDE.md/agents.md 加 "Eval 测试集维护规则"（每次修复后强制判断是否加 eval，禁止擅自写 dataset）；golden_dataset_v2.json 加 tc_AH1/tc_AH2 锁 anti-hallucination 行为，total 27→29。
+
+[2026-05-18 00:10] 保存 | progress_temp.md | 本会话三大块工作存档（Top Pick spoken 驱动 / hybird+幻觉修复 / Eval 规则+2 case）；后端 PID 154714 仍在跑。
+
+[2026-05-18 23:55] 新增 | STRAIN_EFFECT_CONFLICT_PROMPT + tc_SEC1 | 解决"indica 锁 + 用户问 energy 时 AI 被动反问要不要切类目"的问题。新增独立 prompt 模块识别 strain-effect 冲突，强制 LLM 立即调 smart_search 切到纠正后的 strain_type；golden_dataset_v2.json total 29→30；pytest 144 passed 无回退；后端已重启加载新 prompt。
+
+[2026-05-18 23:55] 保存 | progress_temp.md | 记录 STRAIN_EFFECT_CONFLICT_PROMPT 已注入但端到端测试失败：LLM 嘴上切 sativa 但参数仍带 strain_type=Indica；后端 PID 9628 仍跑；等主公选 方案1/2/3。

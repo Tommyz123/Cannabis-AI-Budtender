@@ -65,6 +65,41 @@ def test_strain_hybrid_recognized():
     assert params["strain_type"] == "Hybrid"
 
 
+# ── Strain typo tolerance (introduced after live "hybird" hallucination) ───
+
+def test_strain_typo_hybird_normalized_to_hybrid():
+    """Common typo `hybird` (transposed i/r) must extract as strain_type=Hybrid.
+
+    Locks the fix for the live bug where 'what do you for hybird flower'
+    bypassed fast-path entirely and let the LLM hallucinate an Indica
+    product because no strain constraint propagated.
+    """
+    params = try_extract_search_params(
+        "what do you for hybird flower", [], is_beginner=False,
+    )
+    assert params is not None
+    assert params["strain_type"] == "Hybrid"
+    assert params["category"] == "Flower"
+
+
+def test_strain_typo_sattiva_normalized_to_sativa():
+    """Doubled-t typo `sattiva` must extract as strain_type=Sativa."""
+    params = try_extract_search_params(
+        "sattiva flower", [], is_beginner=False,
+    )
+    assert params is not None
+    assert params["strain_type"] == "Sativa"
+
+
+def test_strain_typo_indca_normalized_to_indica():
+    """Dropped-i typo `indca` must extract as strain_type=Indica."""
+    params = try_extract_search_params(
+        "indca edibles", [], is_beginner=False,
+    )
+    assert params is not None
+    assert params["strain_type"] == "Indica"
+
+
 # ── No auto-effects from strain ────────────────────────────────────────────
 
 def test_indica_alone_does_not_inject_effects():
