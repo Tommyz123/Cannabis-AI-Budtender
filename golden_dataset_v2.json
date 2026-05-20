@@ -10,7 +10,7 @@
     "G - Information Gathering Layer",
     "B - Recommendation Refinement"
   ],
-  "total_cases": 30,
+  "total_cases": 31,
   "test_cases": [
     {
       "id": "tc_C1",
@@ -1009,6 +1009,47 @@
       "tags": [
         "intent-switch",
         "strain-effect-conflict",
+        "active-pivot",
+        "P0",
+        "regression-guard"
+      ]
+    },
+    {
+      "id": "tc_SEC2",
+      "scenario": "intent_switch",
+      "difficulty": "hard",
+      "priority": "P0",
+      "description": "反向场景：用户先锁定 sativa flower 类目，后续切到 sleepy 需求 → AI 必须识别为意图切换，主动调 smart_search 切到 Indica/Hybrid Flower，不反问、不停留在旧 strain 锁。锁定 router.py fast-path 的 Sativa→Indica 反向反转路径。",
+      "input": {
+        "user_message": "do you have something sleepy",
+        "conversation_history": [
+          {
+            "role": "user",
+            "content": "sativa flower"
+          },
+          {
+            "role": "assistant",
+            "content": "Here are some sativa flower options for you:\n\n1. **Blue Dream** by Harvest\nSativa\nSize: 3.5g | Price: $45 | THC: 24.0%\nA classic for creativity and energy, with sweet blueberry flavors.\n\n2. **Private Party** by DEALER CANNABIS CO.\nSativa\nSize: 3.5g | Price: $26 | THC: 22.0%\nProvides a balanced blend of focus and uplift with earthy flavors, perfect for daytime use."
+          }
+        ]
+      },
+      "expected_behavior": {
+        "tool_should_be_called": "smart_search",
+        "tool_choice_should_be": "required",
+        "note": "STRAIN_EFFECT_CONFLICT_PROMPT + router fast-path 反向反转应检测到 sativa 锁 + sleepy 触发词 → 强制切到 strain_type='Indica'（或 'Hybrid'），effects 含 Sleepy 或 Relaxed；form 沿用 Flower"
+      },
+      "judge_criteria": [
+        "AI 调用了 smart_search 工具，参数中 strain_type 必须是 'Indica'（或在罕见情况下 'Hybrid'），绝对不能是 'Sativa'",
+        "AI 调用的 smart_search 参数中 category='Flower'（沿用对话历史的产品形式）",
+        "AI 调用的 smart_search 参数 effects 必须包含 'Sleepy' 或 'Relaxed' 中至少一个",
+        "AI 回复中推荐的所有产品株型都是 Indica（或 Hybrid），不出现任何 Sativa 产品",
+        "AI 回复中不出现 'We don\\'t currently carry' / 'we don\\'t have any' 等被动拒绝话术",
+        "AI 没有反问用户是否要切换 strain 类目（不应出现 'Would you like to explore indica' 这类问句），不带回 Blue Dream / Private Party 等历史里的 Sativa 产品"
+      ],
+      "tags": [
+        "intent-switch",
+        "strain-effect-conflict",
+        "reverse-direction",
         "active-pivot",
         "P0",
         "regression-guard"

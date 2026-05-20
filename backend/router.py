@@ -729,7 +729,8 @@ def try_extract_search_params(
                 out.append("Uplifted")
         return out
 
-    effects = _detect_effects(msg_lower)
+    effects_in_current = _detect_effects(msg_lower)
+    effects = effects_in_current
     if not effects and not strain_in_current:
         effects = _detect_effects(user_history.lower())
 
@@ -744,6 +745,19 @@ def try_extract_search_params(
 
     if not effects and not strain_type:
         return None
+
+    # Strain-Effect Conflict Override (mirrors STRAIN_EFFECT_CONFLICT_PROMPT).
+    # Fires ONLY when strain came from history (not the current message) AND
+    # the current message brought a conflicting effect — i.e. an intent switch.
+    # Reverse the inherited strain to honor the new direction; the prompt-side
+    # rule cannot help here because fast-path bypasses LLM Call 1.
+    if strain_type and not strain_in_current and effects_in_current:
+        if strain_type == "Indica" and any(
+            e in {"Energetic", "Uplifted"} for e in effects_in_current
+        ):
+            strain_type = "Sativa"
+        elif strain_type == "Sativa" and "Sleepy" in effects_in_current:
+            strain_type = "Indica"
 
     # ── Build params ──────────────────────────────────────────────────────────
     params: dict = {"category": category}

@@ -539,6 +539,23 @@ When the customer's NEW message asks for an effect that contradicts the strain t
 - ✅ Tool call (NO text before): `smart_search(category='Flower', strain_type='Sativa', effects=['Energetic','Uplifted'])`
 - ✅ Post-tool reply opens with a one-sentence pivot acknowledgment: "Switching gears since you're after some energy — here are a few Sativa flowers that fit:" then list products in the standard PRODUCT DISPLAY FORMAT.
 
+**Tool Call Parameter Rule (CRITICAL — read this twice):**
+
+When a conflict is detected, the `smart_search` call you emit MUST carry the **NEW** `strain_type`, never the OLD one. The conversation history shows the OLD strain, but you are NOT allowed to copy it into the tool arguments. Your WORDS and your PARAMETERS must agree — if your reasoning says "switch to Sativa", the JSON arguments must contain `strain_type='Sativa'`, full stop.
+
+Concrete examples for the Indica → energy case:
+
+- ✅ CORRECT: `smart_search(category='Flower', strain_type='Sativa', effects=['Energetic'])`
+- ✅ CORRECT: `smart_search(category='Flower', strain_type='Hybrid', effects=['Energetic','Uplifted'])`
+- ❌ FORBIDDEN: `smart_search(category='Flower', strain_type='Indica', effects=['Energetic'])` — old strain still present, this is the bug we are fixing.
+- ❌ FORBIDDEN: Telling the customer "let me look up Sativa flowers" but calling `smart_search(strain_type='Indica', ...)` — talking about the switch is NOT performing the switch. Performing the switch happens in the JSON arguments, nowhere else.
+- ❌ FORBIDDEN: Deferring the switch to "the next turn" by returning text only and no tool call — the switch MUST happen in THIS turn's tool call.
+
+Same rule mirrored for Sativa → sleep:
+
+- ✅ CORRECT: `smart_search(category='Flower', strain_type='Indica', effects=['Sleepy','Relaxed'])`
+- ❌ FORBIDDEN: `smart_search(category='Flower', strain_type='Sativa', effects=['Sleepy'])`
+
 **When this rule does NOT apply (no conflict):**
 - Same-direction effect (Indica + relax / Sativa + energy) — keep the existing strain lock and refine normally.
 - Customer explicitly insists on staying with the old strain ("but still indica", "keep it indica") — respect the explicit override; this rule does NOT fire.

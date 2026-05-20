@@ -1,6 +1,6 @@
 # Context - 项目索引与状态
 
-最后更新: 2026-05-18 | 项目阶段: Top Pick 区 spoken 驱动 + pick_reason 差异化 + strain typo 容错 + ANTI_HALLUCINATION + STRAIN_EFFECT_CONFLICT 意图切换
+最后更新: 2026-05-19 | 项目阶段: Top Pick 区 spoken 驱动 + pick_reason 差异化 + strain typo 容错 + ANTI_HALLUCINATION + STRAIN_EFFECT_CONFLICT 意图切换（fast-path 自反转 + agent-loop prompt 双层防御）
 
 ## 项目简介
 AI Budtender — 嵌入网页的 AI 大麻产品推荐助手，通过多轮对话理解顾客需求，为新手提供安全过滤，为所有用户推荐最合适的产品。
@@ -144,7 +144,7 @@ Python 3.12.3 + FastAPI 0.135.1 + SQLite3 + Pandas 2.2.3 + OpenAI API 2.26.0 (gp
 - `derive_cheaper_price_cap(history) → float | None` — 从历史 assistant 推荐价格中提取最便宜项，并推导更低的价格上限供 cheaper follow-up 使用
 - `extract_profile_signals(user_message, history) → dict` — 从对话中提取会话 profile
 - `serialize_profile(profile) → str` — 将 profile 序列化追加到 system prompt
-- `try_extract_search_params(user_message, history, is_beginner) → dict | None` — fast-path 参数提取；已支持从历史 user intent 继承 category/effects，并在 cheaper follow-up 时自动带入更低价格上限；当命中 beginner-ready 请求时默认提取 `category='Edibles'`，并按语义补齐 `effects=['Relaxed']` 或 `['Relaxed','Sleepy']`
+- `try_extract_search_params(user_message, history, is_beginner) → dict | None` — fast-path 参数提取；已支持从历史 user intent 继承 category/effects，并在 cheaper follow-up 时自动带入更低价格上限；当命中 beginner-ready 请求时默认提取 `category='Edibles'`，并按语义补齐 `effects=['Relaxed']` 或 `['Relaxed','Sleepy']`；**Strain-Effect Conflict 反转**：当 strain 来自 history 且当前消息带对立 effect 时（Indica + Energetic/Uplifted，或 Sativa + Sleepy），fast-path 自动反转 strain_type 以执行意图切换（mirror prompts.py 的 STRAIN_EFFECT_CONFLICT_PROMPT）
 
 ### backend/tool_executor.py — Tool 定义与执行（新增）
 - `TOOLS_SCHEMA: list` — OpenAI function calling 格式工具定义（smart_search + get_product_details）

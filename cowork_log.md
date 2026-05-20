@@ -31,3 +31,7 @@
 [2026-05-18 23:55] 新增 | STRAIN_EFFECT_CONFLICT_PROMPT + tc_SEC1 | 解决"indica 锁 + 用户问 energy 时 AI 被动反问要不要切类目"的问题。新增独立 prompt 模块识别 strain-effect 冲突，强制 LLM 立即调 smart_search 切到纠正后的 strain_type；golden_dataset_v2.json total 29→30；pytest 144 passed 无回退；后端已重启加载新 prompt。
 
 [2026-05-18 23:55] 保存 | progress_temp.md | 记录 STRAIN_EFFECT_CONFLICT_PROMPT 已注入但端到端测试失败：LLM 嘴上切 sativa 但参数仍带 strain_type=Indica；后端 PID 9628 仍跑；等主公选 方案1/2/3。
+
+[2026-05-19] 上传 | GitHub push | 35 个文件 commit 9666cbe，推送至 https://github.com/Tommyz123/Cannabis-AI-Budtender（main 分支）。临时文件 _test_sec1.py / progress_temp.md 未包含。
+
+[2026-05-19 20:35] 修复 | router fast-path strain-effect 反转 + tc_SEC2 | 续昨日端到端测试失败：经证据级诊断（llm_service.py:546 + router.py:699 + llm_service.py:240 三处证据），根因为 fast-path 拼出 strain_type='Indica'+effects=['Energetic'] 后直接绕过 LLM Call 1，且内部 LLM 调用不传 tools=，导致 STRAIN_EFFECT_CONFLICT_PROMPT 无作用点。修复：在 try_extract_search_params 加 Strain-Effect Conflict 反转块（约 +12 行）；prompts.py 保留参数级反例区块作为 agent-loop 路径双层防御；golden_dataset_v2.json total 30→31 加 tc_SEC2 反向场景。验证：_test_sec1.py × 3 全 6/6 PASS；pytest 144/144；eval --tc tc_SEC2 规则✅ 标准6/6 得分100%。logging.md 已归档为 logging_2026Q2.md（752 行）。
