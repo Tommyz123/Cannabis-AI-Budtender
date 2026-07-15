@@ -202,14 +202,17 @@ python eval/run_eval.py
 
 Test cases are defined in `golden_dataset_v2.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
 
-Current coverage: **21 test cases** (21/21 passing):
+Current coverage: **31 test cases** (31/31 passing):
 
 | Direction | TCs | Description |
 |---|---|---|
-| C — Compliance Layer | C1~C6 | Medical disclaimers, age verification, beginner safety |
-| G — Information Gathering | G1~G8 | Signal collection, escalation, multi-turn patterns |
-| B — Recommendation Refinement | B1~B6 | Price/strength feedback, dislike, product details, comparison |
+| C — Compliance Layer | C1~C6 | Medical disclaimers, age verification, beginner safety, anti-hallucination |
+| G — Information Gathering | G1~G13 | Signal collection, escalation, showroom mode, occasion-driven, multi-turn patterns |
+| B — Recommendation Refinement | B1~B6 | Price/strength feedback, dislike, product details, comparison, category exclusion |
 | F — Search Fallback | F1 | Fallback behavior when no exact match found |
+| M — Multi-Turn Context | M1 | Beginner context persistence across turns |
+| AH — Anti-Hallucination | AH1~AH2 | Strain consistency + typo tolerance (P0 regression guards) |
+| SEC — Strain/Effect Conflict | SEC1~SEC2 | Intent-switch handling when new effect contradicts prior strain (P0 regression guards) |
 
 ---
 

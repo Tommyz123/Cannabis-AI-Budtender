@@ -89,6 +89,19 @@ _PRODUCT_COMPARISON_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Product-detail requests ("tell me more about X", "what is X like", "describe X").
+# These must fetch fresh data via smart_search rather than answer from the
+# brief fields already in conversation history — otherwise the model may reply
+# from memory and skip the tool call. Used in two places: (1) as a fast-path
+# guard (detail requests need the LLM to pick the query, not the fast path),
+# and (2) in determine_tool_choice to force tool_choice="required" so the
+# tool call is deterministic instead of left to the model's discretion.
+_PRODUCT_DETAIL_PATTERNS = re.compile(
+    r"tell me more about|more (details?|info) (about|on)|what(\'s| is) .+ like"
+    r"|more about|details? (on|about)|describe .+|explain .+",
+    re.IGNORECASE,
+)
+
 _NEGATIVE_STRENGTH_CONSTRAINT = re.compile(
     r"\b(do\s*n'?t|do\s+not)\s+want\s+to\s+(feel|be|get)\s+(wrecked|out of it|knocked out|destroyed|overwhelmed|too high|too stoned)|"
     r"\bnot\s+(too\s+(intense|strong|heavy|much)|feel\s+wrecked)\b|"
@@ -313,6 +326,11 @@ def is_product_comparison(message: str) -> bool:
     return bool(_PRODUCT_COMPARISON_PATTERNS.search(message))
 
 
+def is_product_detail_query(message: str) -> bool:
+    """Return True if message asks for more detail about a specific product."""
+    return bool(_PRODUCT_DETAIL_PATTERNS.search(message))
+
+
 def is_negative_strength_constraint(message: str) -> bool:
     """Return True if message contains a negative strength/intensity constraint."""
     return bool(_NEGATIVE_STRENGTH_CONSTRAINT.search(message))
@@ -407,6 +425,11 @@ def determine_tool_choice(user_message: str, history: list[dict]) -> str:
         return "none"
     if is_vague_query(user_message):
         return "none"
+    # Product-detail request ("tell me more about X") → force a tool call so
+    # fresh product data is fetched deterministically, rather than leaving it to
+    # the model (which occasionally answers from history and skips the tool).
+    if is_product_detail_query(user_message):
+        return "required"
     if is_beginner_ready_query(user_message, history):
         return "required"
     if is_occasion_ready_query(user_message, history):
@@ -636,12 +659,9 @@ def try_extract_search_params(
     msg_lower = user_message.lower()
 
     # Guard: product detail / comparison requests must go through LLM
-    _DETAIL_PATTERNS = re.compile(
-        r"tell me more about|more (details?|info) (about|on)|what(\'s| is) .+ like"
-        r"|more about|details? (on|about)|describe .+|explain .+",
-        re.I,
-    )
-    if _DETAIL_PATTERNS.search(user_message):
+    # (reuses the module-level pattern; determine_tool_choice forces
+    # tool_choice="required" for these so the tool call still happens).
+    if _PRODUCT_DETAIL_PATTERNS.search(user_message):
         return None
 
     # Guard: flavor/taste-specific searches must go through LLM (fast path can't handle query param)

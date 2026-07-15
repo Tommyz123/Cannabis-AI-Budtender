@@ -129,7 +129,23 @@ def _check_rules(tc: dict, tool_calls_log: list) -> tuple[bool, list[dict]]:
     all_pass = True
 
     # 1. 是否调用了正确的工具
-    if tool_should == "smart_search":
+    # tool_should 可为单个工具名 (str) 或多个可接受工具名的列表 (list)。
+    # 用列表时，调用了其中任一工具即通过——用于「目的相同、实现可选」的
+    # 场景（如产品详情既可用 smart_search 也可用 get_product_details 获取）。
+    if isinstance(tool_should, list):
+        called = any(c["name"] in tool_should for c in tool_calls_log)
+        rule_results.append({
+            "rule": "tool_called",
+            "expected": " 或 ".join(tool_should),
+            "pass": called,
+            "reason": (
+                f"调用了可接受的工具之一（{' 或 '.join(tool_should)}）"
+                if called else f"未调用任何可接受工具（{' 或 '.join(tool_should)}）"
+            ),
+        })
+        if not called:
+            all_pass = False
+    elif tool_should == "smart_search":
         called = any(c["name"] == "smart_search" for c in tool_calls_log)
         rule_results.append({
             "rule": "tool_called",

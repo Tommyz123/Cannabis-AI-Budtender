@@ -469,12 +469,12 @@
         ]
       },
       "expected_behavior": {
-        "tool_should_be_called": "smart_search",
-        "tool_choice_should_be": "auto",
-        "note": "AI 必须调用工具获取 Papaya Cake 的完整产品数据，不得仅凭对话历史中的简略字段回答。"
+        "tool_should_be_called": ["smart_search", "get_product_details"],
+        "tool_choice_should_be": "required",
+        "note": "AI 必须调用工具获取 Papaya Cake 的完整产品数据，不得仅凭对话历史中的简略字段回答。smart_search 与 get_product_details 均为可接受的实现——测的是「是否取回真实数据」，不是具体用哪个工具。"
       },
       "judge_criteria": [
-        "AI 调用了 smart_search（query 包含 'Papaya Cake'）",
+        "AI 调用了工具获取 Papaya Cake 的真实数据（smart_search 或 get_product_details 均可）",
         "回复包含比原推荐更丰富的产品信息（如完整 flavor、effects、dosing 建议等）",
         "AI 没有捏造产品信息（只描述工具返回的字段）",
         "AI 没有直接拒绝或说不知道"
@@ -483,7 +483,8 @@
         "refinement",
         "product-detail",
         "tool-call",
-        "smart-search"
+        "smart-search",
+        "get-product-details"
       ]
     },
     {
