@@ -6,11 +6,14 @@ import os
 import time
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from backend.models import ChatRequest, ChatResponse, UIAction
 from backend.product_manager import ProductManager
 from backend.llm_service import get_recommendation, get_recommendation_stream
@@ -38,6 +41,26 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="AI Budtender API", version="1.0.0", lifespan=lifespan)
+
+# Per-IP rate limit on the LLM-backed /chat endpoints. This is a demo cost
+# guard: it caps how fast any single visitor can burn OpenAI tokens if the
+# public URL gets scraped or shared widely. Limit is configurable via env so
+# it can be tuned in the Render dashboard without a redeploy. Storage is
+# in-memory (fine for a single free-tier instance); no external Redis needed.
+_CHAT_RATE_LIMIT = os.getenv("CHAT_RATE_LIMIT", "20/minute")
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Return a friendly 429 instead of the default plain text."""
+    return Response(
+        status_code=429,
+        content=json.dumps({"detail": "Too many requests — please slow down and try again in a moment."}),
+        media_type="application/json",
+    )
+
 
 _BASIC_USER = os.getenv("BASIC_AUTH_USER", "owner")
 _BASIC_PASS = os.getenv("BASIC_AUTH_PASS", "")
@@ -183,13 +206,17 @@ def _format_manual_filters(manual: dict) -> str:
 
 
 @app.post("/chat", response_model=ChatResponse)
-def chat(request: ChatRequest):
+@limiter.limit(_CHAT_RATE_LIMIT)
+def chat(request: Request, chat_request: ChatRequest):
     """
     Handle a chat turn and return the AI recommendation.
     Passes is_beginner flag to LLM session context when set.
+
+    ``request`` (Starlette) is required by the rate limiter for per-IP keying; it is
+    otherwise unused in the handler body.
     """
-    user_message = request.user_message
-    has_removed_filters = bool(request.removed_filters)
+    user_message = chat_request.user_message
+    has_removed_filters = bool(chat_request.removed_filters)
 
     # A chip-× turn with no typed text is legitimate: the customer didn't
     # speak, they clicked. Treat it as a non-empty input downstream so the
@@ -207,30 +234,30 @@ def chat(request: ChatRequest):
     if not has_removed_filters:
         simple = get_simple_response(user_message)
         if simple:
-            logger.info("session=%s fast_path=True", request.session_id)
+            logger.info("session=%s fast_path=True", chat_request.session_id)
             return ChatResponse(
                 reply=simple,
-                session_id=request.session_id,
+                session_id=chat_request.session_id,
                 response_time_ms=0.0,
             )
 
-    history = [{"role": m.role, "content": m.content} for m in request.messages]
+    history = [{"role": m.role, "content": m.content} for m in chat_request.messages]
 
     if has_removed_filters:
         history = history + [
-            {"role": "system", "content": _format_removed_filters(request.removed_filters)}
+            {"role": "system", "content": _format_removed_filters(chat_request.removed_filters)}
         ]
 
-    if request.manual_filters:
-        manual_signal = _format_manual_filters(request.manual_filters)
+    if chat_request.manual_filters:
+        manual_signal = _format_manual_filters(chat_request.manual_filters)
         if manual_signal:
             history = history + [
                 {"role": "system", "content": manual_signal}
             ]
 
-    if request.compare_product_ids:
+    if chat_request.compare_product_ids:
         history = history + [
-            {"role": "system", "content": _format_compare_request(request.compare_product_ids)}
+            {"role": "system", "content": _format_compare_request(chat_request.compare_product_ids)}
         ]
 
     trace: dict = {}
@@ -240,7 +267,7 @@ def chat(request: ChatRequest):
             history,
             user_message,
             _product_manager,
-            is_beginner=request.is_beginner,
+            is_beginner=chat_request.is_beginner,
             trace=trace,
         )
         elapsed_ms = round((time.perf_counter() - t_start) * 1000, 1)
@@ -250,18 +277,22 @@ def chat(request: ChatRequest):
     ui_action_dict = build_ui_action(trace, reply, _product_manager)
     ui_action = UIAction(**ui_action_dict) if ui_action_dict else None
 
-    logger.info("session=%s response_time_ms=%.1f", request.session_id, elapsed_ms)
+    logger.info("session=%s response_time_ms=%.1f", chat_request.session_id, elapsed_ms)
     return ChatResponse(
         reply=reply,
-        session_id=request.session_id,
+        session_id=chat_request.session_id,
         response_time_ms=elapsed_ms,
         ui_action=ui_action,
     )
 
 
 @app.post("/chat/stream")
-def chat_stream(request: ChatRequest):
+@limiter.limit(_CHAT_RATE_LIMIT)
+def chat_stream(request: Request, chat_request: ChatRequest):
     """Streaming version of /chat. Returns text/event-stream (SSE).
+
+    ``request`` (Starlette) is required by the rate limiter for per-IP keying; it is
+    otherwise unused in the handler body.
 
     SSE protocol (typed events):
 
@@ -291,8 +322,8 @@ def chat_stream(request: ChatRequest):
     Honors the same ``removed_filters`` and ``manual_filters`` UI signals
     as the non-streaming ``/chat`` endpoint.
     """
-    user_message = request.user_message
-    has_removed_filters = bool(request.removed_filters)
+    user_message = chat_request.user_message
+    has_removed_filters = bool(chat_request.removed_filters)
 
     # Same chip-× allowance as /chat: empty user_message is OK iff a UI
     # signal accompanies it.
@@ -311,23 +342,23 @@ def chat_stream(request: ChatRequest):
                 yield "data: [DONE]\n\n"
             return StreamingResponse(_simple_gen(), media_type="text/event-stream")
 
-    history = [{"role": m.role, "content": m.content} for m in request.messages]
+    history = [{"role": m.role, "content": m.content} for m in chat_request.messages]
 
     if has_removed_filters:
         history = history + [
-            {"role": "system", "content": _format_removed_filters(request.removed_filters)}
+            {"role": "system", "content": _format_removed_filters(chat_request.removed_filters)}
         ]
 
-    if request.manual_filters:
-        manual_signal = _format_manual_filters(request.manual_filters)
+    if chat_request.manual_filters:
+        manual_signal = _format_manual_filters(chat_request.manual_filters)
         if manual_signal:
             history = history + [
                 {"role": "system", "content": manual_signal}
             ]
 
-    if request.compare_product_ids:
+    if chat_request.compare_product_ids:
         history = history + [
-            {"role": "system", "content": _format_compare_request(request.compare_product_ids)}
+            {"role": "system", "content": _format_compare_request(chat_request.compare_product_ids)}
         ]
 
     def generate():
@@ -355,7 +386,7 @@ def chat_stream(request: ChatRequest):
                 history,
                 user_message,
                 _product_manager,
-                is_beginner=request.is_beginner,
+                is_beginner=chat_request.is_beginner,
                 trace=trace,
             ):
                 # Best-effort: emit ui_action as soon as the trace shows tool

@@ -1,0 +1,26 @@
+# Render.com deployment config for the AI Budtender demo.
+#
+# One web service = FastAPI backend (backend.main:app), which also serves the
+# static frontend via StaticFiles, so a single service covers the whole demo.
+#
+# Render injects $PORT; uvicorn must bind it (do NOT hardcode 8000 here).
+# Secrets (OPENAI_API_KEY) are NOT committed — set them in the Render
+# dashboard so they stay out of git.
+services:
+  - type: web
+    name: cannabis-ai-budtender
+    runtime: python
+    plan: free                      # free tier is enough for a portfolio demo
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: OPENAI_API_KEY
+        sync: false                 # set manually in the dashboard (secret)
+      # Optional demo rate limit (requests/minute per IP) for /chat endpoints.
+      # Falls back to a safe default in code if unset.
+      - key: CHAT_RATE_LIMIT
+        value: "20/minute"

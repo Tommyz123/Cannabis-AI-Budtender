@@ -9,3 +9,4 @@ httpx==0.28.1
 pylint==3.3.3
 bandit==1.8.3
 langfuse>=3.0.0,<4.0.0
+slowapi==0.1.9
