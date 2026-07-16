@@ -1,21 +1,24 @@
 """FastAPI application entry point for AI Budtender."""
 
+import base64
 import json
+import os
 import time
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from backend.models import ChatRequest, ChatResponse, UIAction
 from backend.product_manager import ProductManager
 from backend.llm_service import get_recommendation, get_recommendation_stream
 from backend.router import get_simple_response
 from backend.ui_action_builder import (
-    build_picks_for_spoken,
+    build_top_picks,
     build_ui_action,
     build_ui_action_partial,
-    scan_spoken_product_ids,
 )
 
 logging.basicConfig(
@@ -36,6 +39,31 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="AI Budtender API", version="1.0.0", lifespan=lifespan)
 
+_BASIC_USER = os.getenv("BASIC_AUTH_USER", "owner")
+_BASIC_PASS = os.getenv("BASIC_AUTH_PASS", "")
+
+
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if not _BASIC_PASS:
+            return await call_next(request)
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Basic "):
+            try:
+                decoded = base64.b64decode(auth[6:]).decode("utf-8", "ignore")
+                user, _, pw = decoded.partition(":")
+                if user == _BASIC_USER and pw == _BASIC_PASS:
+                    return await call_next(request)
+            except Exception:
+                pass
+        return Response(
+            status_code=401,
+            content="Unauthorized",
+            headers={"WWW-Authenticate": 'Basic realm="AI Budtender"'},
+        )
+
+
+app.add_middleware(BasicAuthMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -345,27 +373,31 @@ def chat_stream(request: ChatRequest):
             if late:
                 yield late
 
-            # Reply done — scan it for product names, then emit spoken
-            # and picks events. Picks are derived from spoken ids so the
-            # Top Pick row exactly reflects what the AI said.
-            full_reply = "".join(reply_buf)
+            # Reply done — emit the Top Picks. Picks are chosen
+            # deterministically from the products smart_search returned this
+            # turn (ranked by score_picks), NOT by scanning the reply text, so
+            # a card can never surface a product that was not retrieved.
             if ui_action_emitted:
-                ids = scan_spoken_product_ids(full_reply, trace)
-                if ids:
+                picks = build_top_picks(trace, _product_manager)
+                if picks:
+                    ids = [p["id"] for p in picks if p.get("id") is not None]
                     yield (
                         f"event: spoken\n"
                         f"data: {json.dumps(ids, separators=(',', ':'))}\n\n"
                     )
-                    picks = build_picks_for_spoken(
-                        trace, _product_manager, ids,
+                    yield (
+                        f"event: picks\n"
+                        f"data: {json.dumps(picks, separators=(',', ':'))}\n\n"
                     )
-                    if picks:
-                        yield (
-                            f"event: picks\n"
-                            f"data: {json.dumps(picks, separators=(',', ':'))}\n\n"
-                        )
         except Exception as exc:  # noqa: BLE001
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+app.mount(
+    "/",
+    StaticFiles(directory="frontend", html=True),
+    name="frontend",
+)

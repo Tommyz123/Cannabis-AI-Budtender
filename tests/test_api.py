@@ -471,11 +471,15 @@ def test_chat_stream_emits_ui_action_when_search_runs(client):
     assert "data: [DONE]" in body
 
 
-def test_chat_stream_skips_picks_event_when_reply_mentions_no_products(client):
-    """No product name in the reply → no `event: picks` (and no `event: spoken`).
+def test_chat_stream_picks_are_deterministic_regardless_of_reply(client):
+    """Picks are driven by the retrieved set, NOT by scanning the reply prose.
 
-    Lock the contract: the Top Pick row should NOT be populated when the AI
-    never names a product (e.g. info-gathering follow-ups after a search).
+    Lock the new contract: once smart_search returns products, the Top Pick
+    ("Best Matches") row is populated from that retrieved set even when the
+    assistant's reply is an info-gathering follow-up that names no product.
+    This is what makes 'displayed cards == retrieved matches' true by
+    construction — there is no prose-scanning step that could suppress or
+    mis-attribute cards.
     """
     def fake_stream(history, user_message, product_manager, **kwargs):
         trace = kwargs.get("trace")
@@ -496,7 +500,7 @@ def test_chat_stream_skips_picks_event_when_reply_mentions_no_products(client):
         response = client.post(
             "/chat/stream",
             json={
-                "session_id": "stream-no-mention",
+                "session_id": "stream-deterministic",
                 "messages": [],
                 "is_beginner": False,
                 "user_message": "what should I get",
@@ -506,6 +510,39 @@ def test_chat_stream_skips_picks_event_when_reply_mentions_no_products(client):
     assert response.status_code == 200
     body = response.text
     assert "event: ui_action" in body
+    # Retrieval was non-empty → picks fire even though the reply names no product.
+    assert "event: spoken" in body
+    assert "event: picks" in body
+    assert "pick_reason" in body
+    # The single strict match (id 1) leads the spoken list; same-category
+    # backfill pads it up to the minimum, so the list starts with "1,".
+    assert "data: [1," in body or "data: [1]" in body
+    assert "data: [DONE]" in body
+
+
+def test_chat_stream_skips_picks_event_when_no_search_ran(client):
+    """No smart_search this turn → no `event: spoken` / `event: picks`.
+
+    Info-gathering turns that never call smart_search (no retrieval at all)
+    have nothing to show in the Best Matches row.
+    """
+    def fake_stream(history, user_message, product_manager, **kwargs):
+        # Deliberately does NOT populate trace["last_smart_search"].
+        yield "Want something calming or energizing?"
+
+    with patch("backend.main.get_recommendation_stream", side_effect=fake_stream):
+        response = client.post(
+            "/chat/stream",
+            json={
+                "session_id": "stream-no-search",
+                "messages": [],
+                "is_beginner": False,
+                "user_message": "what should I get",
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.text
     assert "event: spoken" not in body
     assert "event: picks" not in body
     assert "data: [DONE]" in body

@@ -3,19 +3,22 @@
 Covers the trace → ui_action transformation:
 - Empty / missing trace returns None.
 - Both fast-path and agent-loop traces produce the same shape.
-- The reply scanner is robust to pipe-separated names and markdown bold.
+- Top Picks are chosen DETERMINISTICALLY from the retrieved products
+  (via ProductManager.score_picks), independent of the reply text — so a
+  card can never surface a product that was not retrieved.
 - The visible-filters whitelist excludes is_beginner and hardware_type.
 """
 
 from backend.product_manager import ProductManager
 from backend.ui_action_builder import (
+    REC_MAX,
+    REC_MIN,
+    TOP_PICK_LIMIT,
     VISIBLE_FILTER_FIELDS,
-    build_picks_for_spoken,
+    build_top_picks,
     build_ui_action,
     build_ui_action_partial,
-    scan_spoken_product_ids,
-    _scan_key,
-    _scan_reply_for_product_ids,
+    select_recommendation_ids,
 )
 
 
@@ -87,12 +90,13 @@ def test_agent_loop_trace_produces_ui_action():
     assert ua is not None
     assert ua["filters"] == {"category": "Flower", "strain_type": "Sativa"}
     assert ua["total_matched"] == 1
-    # picks should contain at least one entry (Tier 7 fallback guarantees this)
-    assert len(ua["picks"]) >= 1
+    # The single strict match leads; the list is padded from the same
+    # category up to REC_MIN so the Best Matches row is never sparse.
     assert ua["picks"][0]["id"] == 101
+    assert len(ua["picks"]) >= REC_MIN
     assert "pick_reason" in ua["picks"][0]
-    # The reply mentions the product name → it should appear in spoken ids
-    assert ua["spoken_product_ids"] == [101]
+    # spoken_product_ids mirrors the picks' ids exactly.
+    assert ua["spoken_product_ids"] == [p["id"] for p in ua["picks"]]
 
 
 def test_fast_path_trace_produces_same_shape():
@@ -113,65 +117,99 @@ def test_fast_path_trace_produces_same_shape():
     assert ua["filters"]["strain_type"] == "Sativa"
     assert ua["filters"]["effects"] == ["Energetic", "Uplifted"]
     assert ua["total_matched"] == 1
-    assert ua["spoken_product_ids"] == [202]
+    # The strict match leads; same-category backfill pads to REC_MIN.
+    assert ua["spoken_product_ids"][0] == 202
+    assert len(ua["spoken_product_ids"]) >= REC_MIN
 
 
-# ── Reply scanning: pipe-separated names ──────────────────────────────────────
+# ── Deterministic picks: independent of reply text ────────────────────────────
 
-def test_scan_picks_up_name_with_pipe_separator():
-    """Reply mentions 'Half & Half'; DB name is 'Half & Half | UP | 10mg'."""
-    fake_products = [
-        _make_fake_product(301, "Half & Half | UP | 2:1 | Single | 10mg"),
-    ]
-    trace = {
-        "profile": {},
-        "last_smart_search": {
-            "args": {"category": "Edibles"},
-            "result": {"products": fake_products, "total": 1},
-        },
-    }
-    reply = "I recommend Half & Half — a balanced ratio gummy."
-    ua = build_ui_action(trace, reply, _pm)
-    assert ua is not None
-    assert ua["spoken_product_ids"] == [301]
+def test_picks_are_independent_of_reply_text():
+    """Same trace + different reply text → identical picks.
 
-
-def test_scan_key_strips_pipe_segments():
-    """_scan_key returns just the leading pipe segment, trimmed."""
-    assert _scan_key("Half & Half | UP | 10mg") == "Half & Half"
-    assert _scan_key("Plain Name") == "Plain Name"
-    assert _scan_key("  Leading Space | Whatever") == "Leading Space"
-
-
-# ── Reply scanning: markdown bold and other flanking punctuation ──────────────
-
-def test_scan_handles_markdown_bold():
-    """**Half & Half** in markdown should still match — `*` is a non-word char."""
-    fake_products = [
-        _make_fake_product(401, "Half & Half | UP | 10mg"),
-    ]
-    trace = {
-        "profile": {},
-        "last_smart_search": {
-            "args": {"category": "Edibles"},
-            "result": {"products": fake_products, "total": 1},
-        },
-    }
-    reply = "Try **Half & Half** for a balanced experience."
-    ua = build_ui_action(trace, reply, _pm)
-    assert ua is not None
-    assert ua["spoken_product_ids"] == [401]
-
-
-def test_scan_returns_ids_in_reply_order_and_dedupes():
-    """Two products both mentioned → ordered by first appearance, no dupes."""
+    The core guarantee of the deterministic design: picks come from the
+    retrieved set, never from scanning the prose. Two wildly different
+    replies (one naming products, one naming none) must yield the same
+    Top Pick row.
+    """
     products = [
-        _make_fake_product(501, "Alpha One"),
-        _make_fake_product(502, "Beta Two"),
+        _make_fake_product(1001, "Lemon Haze"),
+        _make_fake_product(1002, "Blue Dream"),
+        _make_fake_product(1003, "OG Kush"),
     ]
-    reply = "Start with Beta Two, but Alpha One also works. Beta Two again!"
-    ids = _scan_reply_for_product_ids(reply, products)
-    assert ids == [502, 501]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 3},
+        },
+    }
+    ua_named = build_ui_action(trace, "Try **Lemon Haze** or **OG Kush**.", _pm)
+    ua_silent = build_ui_action(trace, "Let me know what vibe you're after.", _pm)
+    assert ua_named is not None and ua_silent is not None
+    assert ua_named["picks"] == ua_silent["picks"]
+    assert ua_named["spoken_product_ids"] == ua_silent["spoken_product_ids"]
+
+
+def test_picks_are_subset_of_retrieved_products():
+    """Every pick id must come from the retrieved set — never invented.
+
+    This is the property that makes 'displayed == retrieved' true by
+    construction and kills the old name-collision mis-attribution bug.
+    """
+    products = [
+        _make_fake_product(1, "TTM | Pluto Punch | 100mg"),
+        _make_fake_product(2, "TTM | Cherry Nova | 100mg"),
+        _make_fake_product(3, "Blue Dream"),
+        _make_fake_product(4, "Blue Dream | Hash | 0.5g"),
+    ]
+    retrieved_ids = {p["id"] for p in products}
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Edibles"},
+            "result": {"products": products, "total": 4},
+        },
+    }
+    # A reply that names one sibling would have tripped the old scanner into
+    # also highlighting the collision partner; the deterministic path can't.
+    ua = build_ui_action(trace, "I recommend TTM | Pluto Punch.", _pm)
+    assert ua is not None
+    pick_ids = [p["id"] for p in ua["picks"]]
+    assert set(pick_ids).issubset(retrieved_ids)
+    assert pick_ids == ua["spoken_product_ids"]
+
+
+def test_picks_capped_at_top_pick_limit():
+    """No more than TOP_PICK_LIMIT cards, even with a large retrieved set."""
+    products = [_make_fake_product(3000 + i, f"Strain {i}") for i in range(20)]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 20},
+        },
+    }
+    ua = build_ui_action(trace, "Here are some options.", _pm)
+    assert ua is not None
+    assert len(ua["picks"]) <= TOP_PICK_LIMIT
+
+
+def test_picks_nonempty_whenever_retrieval_nonempty():
+    """A non-empty retrieved set always yields at least one pick (Tier 7)."""
+    products = [_make_fake_product(5001, "Anything At All")]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 1},
+        },
+    }
+    ua = build_ui_action(trace, "", _pm)  # empty reply must not matter
+    assert ua is not None
+    assert len(ua["picks"]) >= 1
+    for p in ua["picks"]:
+        assert "pick_reason" in p and isinstance(p["pick_reason"], str)
 
 
 # ── Visible-filter whitelist: is_beginner / hardware_type excluded ────────────
@@ -208,7 +246,7 @@ def test_is_beginner_and_hardware_type_excluded_from_filters():
     assert VISIBLE_FILTER_FIELDS == {"category", "strain_type", "effects", "max_price"}
 
 
-# ── build_ui_action_partial: streaming-friendly half (filters + picks) ────
+# ── build_ui_action_partial: streaming-friendly half (filters, no picks) ──────
 
 def test_partial_returns_none_when_no_smart_search():
     """No trace → no partial — same contract as build_ui_action."""
@@ -217,14 +255,12 @@ def test_partial_returns_none_when_no_smart_search():
 
 
 def test_partial_includes_filters_total_but_empty_picks_and_spoken():
-    """Partial omits the reply scan AND picks selection.
+    """Partial carries filters/total immediately but defers picks.
 
-    The streaming /chat/stream endpoint emits ui_action BEFORE the reply
-    has streamed in. Under the spoken-driven Top Pick scheme (see
-    `build_picks_for_spoken`), picks cannot be known until the reply
-    text exists, so the partial payload's `picks` is always [] — the
-    streaming endpoint follows up with a dedicated `picks` SSE event
-    once the reply finishes.
+    The streaming /chat/stream endpoint emits ui_action the moment
+    smart_search resolves (so the storefront can animate chips/grid), then
+    follows up with a dedicated `picks` SSE event once the reply finishes.
+    The partial's `picks`/`spoken_product_ids` are therefore always empty.
     """
     fake_products = [_make_fake_product(701, "Pre-stream Pick")]
     trace = {
@@ -238,7 +274,6 @@ def test_partial_includes_filters_total_but_empty_picks_and_spoken():
     assert partial is not None
     assert partial["filters"] == {"category": "Flower", "strain_type": "Sativa"}
     assert partial["total_matched"] == 1
-    # Critical: picks and spoken are both deferred to post-stream events.
     assert partial["picks"] == []
     assert partial["spoken_product_ids"] == []
 
@@ -262,87 +297,123 @@ def test_partial_keys_match_full_ui_action():
     assert set(full.keys()) == set(partial.keys())
 
 
-# ── scan_spoken_product_ids: streaming reply scan ────────────────────────
+# ── build_top_picks: the deterministic picker used by the streaming endpoint ──
 
-def test_scan_spoken_returns_empty_when_no_smart_search():
-    """Reply scan returns [] when no smart_search happened (no candidates)."""
-    assert scan_spoken_product_ids("any reply here", {}) == []
-    assert scan_spoken_product_ids("any reply here", {"profile": {}}) == []
-
-
-def test_scan_spoken_returns_ids_in_order_of_first_mention():
-    """Spoken ids come back ordered by appearance in the reply, deduped."""
-    products = [
-        _make_fake_product(1, "Alpha Strain"),
-        _make_fake_product(2, "Beta Strain"),
-        _make_fake_product(3, "Gamma Strain"),
-    ]
-    trace = {
-        "last_smart_search": {
-            "args": {"category": "Flower"},
-            "result": {"products": products, "total": 3},
-        },
-    }
-    reply = "Try Gamma Strain first, then Alpha Strain, then Alpha Strain again."
-    ids = scan_spoken_product_ids(reply, trace)
-    # Gamma first (mentioned first), Alpha second, no Beta (never mentioned),
-    # Alpha not duplicated.
-    assert ids == [3, 1]
+def test_build_top_picks_empty_when_no_smart_search():
+    """No smart_search in trace → no picks."""
+    assert build_top_picks({}, _pm) == []
+    assert build_top_picks({"profile": {}}, _pm) == []
 
 
-def test_scan_spoken_empty_reply_returns_empty():
-    """Empty / whitespace reply text → empty list."""
-    products = [_make_fake_product(1, "Alpha Strain")]
-    trace = {
-        "last_smart_search": {
-            "args": {"category": "Flower"},
-            "result": {"products": products, "total": 1},
-        },
-    }
-    assert scan_spoken_product_ids("", trace) == []
-
-
-# ── build_ui_action: picks are spoken-driven (Phase A contract) ──────────
-
-
-def test_build_ui_action_picks_strictly_subset_of_spoken_ids():
-    """Top Pick row content ⊆ products mentioned in the AI reply.
-
-    Contract guard: filtered set has 4 products, AI reply mentions only
-    2 of them — picks must be exactly those 2, not the algorithm's
-    independent 3-product selection. Products in filtered but not
-    spoken stay in the regular grid only.
-    """
-    products = [
-        _make_fake_product(1001, "Lemon Haze"),
-        _make_fake_product(1002, "Blue Dream"),
-        _make_fake_product(1003, "OG Kush"),
-        _make_fake_product(1004, "Sour Diesel"),
-    ]
+def test_build_top_picks_empty_when_retrieval_empty():
+    """smart_search ran but returned nothing → no picks."""
     trace = {
         "profile": {},
         "last_smart_search": {
             "args": {"category": "Flower"},
-            "result": {"products": products, "total": 4},
+            "result": {"products": [], "total": 0},
         },
     }
-    reply = "Two solid choices: try **Lemon Haze** for daytime, or **OG Kush** to wind down."
-    ua = build_ui_action(trace, reply, _pm)
-    assert ua is not None
-    pick_ids = [p["id"] for p in ua["picks"]]
-    spoken_ids = ua["spoken_product_ids"]
-    # Order of picks follows mention order (which matches spoken).
-    assert pick_ids == spoken_ids
-    # Strict subset of spoken — never algorithm-selected products.
-    assert set(pick_ids).issubset(set(spoken_ids))
-    # Every pick carries a reason.
-    for p in ua["picks"]:
+    assert build_top_picks(trace, _pm) == []
+
+
+def test_build_top_picks_returns_ranked_reasoned_cards():
+    """Non-empty retrieval → capped, reasoned Top-Pick cards from that set."""
+    products = [_make_fake_product(6000 + i, f"Strain {i}") for i in range(10)]
+    retrieved_ids = {p["id"] for p in products}
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 10},
+        },
+    }
+    picks = build_top_picks(trace, _pm)
+    assert 1 <= len(picks) <= TOP_PICK_LIMIT
+    for p in picks:
+        assert p["id"] in retrieved_ids
         assert "pick_reason" in p and isinstance(p["pick_reason"], str)
 
 
-def test_build_ui_action_picks_empty_when_reply_mentions_no_products():
-    """No product names in reply → picks list is empty (Top Pick row hidden)."""
-    products = [_make_fake_product(2001, "Lemon Haze")]
+# ── Recommendation count guarantee (3-6) & shared selection ───────────────────
+
+def test_select_recommendation_ids_takes_top_n_in_order():
+    """The shared menu = first REC_MAX retrieved ids, in retrieval order."""
+    products = [_make_fake_product(7000 + i, f"Strain {i}") for i in range(10)]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 10},
+        },
+    }
+    ids = select_recommendation_ids(trace)
+    assert ids == [7000 + i for i in range(REC_MAX)]  # top REC_MAX, in order
+
+
+def test_recommendation_count_capped_at_rec_max():
+    """A large retrieved set yields exactly REC_MAX picks — no more."""
+    products = [_make_fake_product(8000 + i, f"Strain {i}") for i in range(20)]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 20},
+        },
+    }
+    ua = build_ui_action(trace, "irrelevant", _pm)
+    assert ua is not None
+    assert len(ua["picks"]) == REC_MAX
+
+
+def test_recommendation_hits_rec_min_when_enough_retrieved():
+    """With >= REC_MIN products retrieved, at least REC_MIN cards show."""
+    products = [_make_fake_product(9000 + i, f"Strain {i}") for i in range(REC_MIN)]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": REC_MIN},
+        },
+    }
+    ua = build_ui_action(trace, "irrelevant", _pm)
+    assert ua is not None
+    assert len(ua["picks"]) >= REC_MIN
+
+
+def test_cards_and_selection_are_the_same_list():
+    """The cards' ids equal select_recommendation_ids — one source of truth.
+
+    This is the guarantee that the storefront cards and the products the
+    assistant is instructed to recommend can never diverge: both are built
+    from this single list.
+    """
+    products = [_make_fake_product(9100 + i, f"Strain {i}") for i in range(8)]
+    trace = {
+        "profile": {},
+        "last_smart_search": {
+            "args": {"category": "Flower"},
+            "result": {"products": products, "total": 8},
+        },
+    }
+    selected = select_recommendation_ids(trace)
+    cards = build_top_picks(trace, _pm)
+    assert [c["id"] for c in cards] == selected
+
+
+# ── Backfill: thin real result padded to REC_MIN, marked "Similar option" ─────
+
+def test_thin_result_backfilled_to_rec_min_with_similar_option():
+    """A single real match is padded from the same category up to REC_MIN.
+
+    The real match keeps a normal reason; the padded products are labeled
+    SIMILAR_OPTION_REASON so the UI can be honest about what's an exact match
+    vs a same-category suggestion.
+    """
+    from backend.ui_action_builder import SIMILAR_OPTION_REASON
+    # id 101 is a fake product; category Flower exists in the real catalog so
+    # backfill can top it up.
+    products = [_make_fake_product(101, "Only Real Match")]
     trace = {
         "profile": {},
         "last_smart_search": {
@@ -350,24 +421,23 @@ def test_build_ui_action_picks_empty_when_reply_mentions_no_products():
             "result": {"products": products, "total": 1},
         },
     }
-    reply = "Let me know if you want something calming or energizing."
-    ua = build_ui_action(trace, reply, _pm)
-    assert ua is not None
-    assert ua["picks"] == []
-    assert ua["spoken_product_ids"] == []
+    picks = build_top_picks(trace, _pm)
+    assert len(picks) >= REC_MIN
+    assert picks[0]["id"] == 101  # the real match leads
+    # At least one padded product carries the "Similar option" label.
+    assert any(p["pick_reason"] == SIMILAR_OPTION_REASON for p in picks[1:])
+    # The real match is NOT labeled as a similar option.
+    assert picks[0]["pick_reason"] != SIMILAR_OPTION_REASON
 
 
-def test_build_picks_for_spoken_returns_empty_when_spoken_empty():
-    """Helper used by the streaming endpoint returns [] for empty ids."""
+def test_zero_matches_not_backfilled():
+    """0 strict matches → stay empty; never fabricate from a true no-result."""
     trace = {
         "profile": {},
         "last_smart_search": {
             "args": {"category": "Flower"},
-            "result": {
-                "products": [_make_fake_product(3001, "Lemon Haze")],
-                "total": 1,
-            },
+            "result": {"products": [], "total": 0},
         },
     }
-    assert build_picks_for_spoken(trace, _pm, []) == []
-    assert build_picks_for_spoken({}, _pm, [3001]) == []
+    assert build_top_picks(trace, _pm) == []
+    assert select_recommendation_ids(trace, _pm) == []

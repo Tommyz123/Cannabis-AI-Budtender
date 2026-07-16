@@ -26,8 +26,49 @@ from backend.router import (
     serialize_profile,
     try_extract_search_params,
 )
+from backend.ui_action_builder import select_recommendation_ids
 
 logger = logging.getLogger(__name__)
+
+
+def _recommendation_directive(trace: dict, product_manager) -> str | None:
+    """Build a system directive pinning the products the assistant may recommend.
+
+    Uses the single deterministic recommendation list for this turn
+    (``select_recommendation_ids`` — the top-N retrieved products, padded to
+    the minimum from the same category when needed) and returns an instruction
+    telling the model to recommend EXACTLY those products, in that order, and
+    no others. This keeps the assistant's prose in lockstep with the Best
+    Matches cards — both are built from the same list. Returns ``None`` when
+    there is nothing to pin.
+
+    Must be called AFTER the smart_search result is recorded on the trace so
+    any backfilled products are included.
+    """
+    selected_ids = select_recommendation_ids(trace, product_manager)
+    if not selected_ids:
+        return None
+    last = trace.get("last_smart_search") or {}
+    products = (last.get("result") or {}).get("products", []) or []
+    by_id = {p.get("id"): p for p in products if p.get("id") is not None}
+    lines = []
+    for i, pid in enumerate(selected_ids, 1):
+        prod = by_id.get(pid)
+        if not prod:
+            continue
+        lines.append(f"{i}. {prod.get('s', '')} (id={pid})")
+    if not lines:
+        return None
+    listing = "\n".join(lines)
+    return (
+        "RECOMMENDATION SET — the storefront is already showing these "
+        f"{len(lines)} products as the customer's Best Matches. In your reply "
+        "you MUST recommend EXACTLY these products, in this order, and mention "
+        "no other product by name:\n"
+        f"{listing}\n"
+        "Describe each briefly. Do not add, drop, or reorder them. All other "
+        "rules (compliance, tone, safety) still apply."
+    )
 
 
 
@@ -236,6 +277,13 @@ def _run_fast_path(
             "content": json.dumps(search_result, separators=(",", ":")),
         })
 
+        # Pin the reply to the same Best Matches list the storefront will
+        # display (see _recommendation_directive).
+        if trace is not None:
+            directive = _recommendation_directive(trace, product_manager)
+            if directive:
+                messages.append({"role": "system", "content": directive})
+
         # Single LLM call — no tools needed, search already done
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -320,6 +368,15 @@ def _run_agent_loop(
                     "tool_call_id": tool_call.id,
                     "content": json.dumps(result, separators=(",", ":")),
                 })
+
+                # Pin the reply to the same product list the storefront will
+                # show as Best Matches: the backend chooses the top-N retrieved
+                # products and instructs the model to recommend exactly those.
+                # Keeps prose and cards in lockstep by construction.
+                if fn_name == "smart_search" and trace is not None:
+                    directive = _recommendation_directive(trace, product_manager)
+                    if directive:
+                        messages.append({"role": "system", "content": directive})
 
             # If search returned results, remove smart_search to prevent re-search
             # but keep get_product_details available so LLM can fetch product info
@@ -409,6 +466,13 @@ def _run_fast_path_stream(
             "tool_call_id": fake_call_id,
             "content": json.dumps(search_result, separators=(",", ":")),
         })
+
+        # Pin the streamed reply to the same Best Matches list the storefront
+        # will display (see _recommendation_directive).
+        if trace is not None:
+            directive = _recommendation_directive(trace, product_manager)
+            if directive:
+                messages.append({"role": "system", "content": directive})
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FastPathStream] setup failed: %s", exc)
         return  # Caller falls back to agent loop
@@ -496,6 +560,13 @@ def _run_agent_loop_stream(
                     "tool_call_id": tool_call.id,
                     "content": json.dumps(result, separators=(",", ":")),
                 })
+
+                # Pin the streamed reply to the same Best Matches list the
+                # storefront will display (see _recommendation_directive).
+                if fn_name == "smart_search" and trace is not None:
+                    directive = _recommendation_directive(trace, product_manager)
+                    if directive:
+                        messages.append({"role": "system", "content": directive})
 
             if search_had_results:
                 current_tools = [t for t in TOOLS_SCHEMA if t["function"]["name"] != "smart_search"]
