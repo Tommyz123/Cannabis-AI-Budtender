@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Budtender — Compliance-Aware Conversational Agent | Case Study</title>
+<meta name="description" content="An LLM agent that recommends cannabis products through multi-turn conversation, with compliance guardrails enforced in code and proven by an automated eval suite.">
+<style>
+  :root{
+    --forest:#306634; --forest-dark:#214821; --forest-soft:#e6efe7;
+    --lime:#CEDA00; --lime-soft:#f3f5d8;
+    --ink:#1c2a1d; --body:#3a463b; --muted:#6b756c;
+    --bg:#ffffff; --bg-alt:#f6f8f6; --line:#e2e8e2;
+    --ok:#306634; --radius:14px;
+    --shadow:0 10px 30px rgba(33,72,33,.10);
+    --shadow-sm:0 3px 12px rgba(33,72,33,.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    color:var(--body); background:var(--bg); line-height:1.65; font-size:17px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:0 24px}
+  h1,h2,h3{color:var(--ink);line-height:1.25;letter-spacing:-.01em}
+  h2{font-size:1.7rem;margin-bottom:.4rem}
+  h3{font-size:1.15rem;margin-bottom:.3rem}
+  p{margin-bottom:1rem}
+  a{color:var(--forest);text-decoration:none}
+  a:hover{text-decoration:underline}
+  strong{color:var(--ink)}
+  code{background:var(--forest-soft);color:var(--forest-dark);padding:.1em .4em;border-radius:5px;font-size:.88em;font-family:"SF Mono",Menlo,Consolas,monospace}
+
+  /* HERO */
+  .hero{background:linear-gradient(160deg,var(--forest) 0%,var(--forest-dark) 100%);color:#fff;padding:76px 0 64px;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;top:-60px;right:-60px;width:260px;height:260px;background:var(--lime);opacity:.14;border-radius:50%}
+  .hero .wrap{position:relative;z-index:1}
+  .eyebrow{display:inline-block;background:rgba(206,218,0,.18);color:var(--lime);font-weight:700;font-size:.78rem;letter-spacing:.08em;text-transform:uppercase;padding:6px 14px;border-radius:999px;margin-bottom:18px}
+  .hero h1{color:#fff;font-size:2.5rem;margin-bottom:18px;max-width:20ch}
+  .hero .lede{font-size:1.22rem;color:#e8f0e8;max-width:60ch;margin-bottom:28px}
+  .cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:.98rem;padding:12px 22px;border-radius:999px;transition:transform .12s ease,box-shadow .12s ease}
+  .btn-primary{background:var(--lime);color:var(--forest-dark)}
+  .btn-primary:hover{text-decoration:none;transform:translateY(-2px);box-shadow:0 8px 20px rgba(206,218,0,.35)}
+  .btn-ghost{background:rgba(255,255,255,.10);color:#fff;border:1px solid rgba(255,255,255,.28)}
+  .btn-ghost:hover{text-decoration:none;background:rgba(255,255,255,.18)}
+  .btn-ghost.disabled{opacity:.5;cursor:default;pointer-events:none}
+
+  /* META STRIP */
+  .meta{background:var(--forest-dark);color:#cfe0cf}
+  .meta .wrap{display:flex;flex-wrap:wrap;gap:28px;padding:16px 24px;font-size:.86rem}
+  .meta b{color:#fff;display:block;font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;margin-bottom:2px;opacity:.75}
+
+  section{padding:56px 0;border-bottom:1px solid var(--line)}
+  section.alt{background:var(--bg-alt)}
+  .kicker{color:var(--forest);font-weight:700;font-size:.8rem;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+
+  /* ROLE CARD */
+  .rolecard{background:var(--forest-soft);border-left:4px solid var(--forest);border-radius:10px;padding:20px 24px;margin-top:6px}
+  .rolecard dl{display:grid;grid-template-columns:auto 1fr;gap:6px 18px}
+  .rolecard dt{font-weight:700;color:var(--forest-dark);white-space:nowrap}
+  .rolecard dd{color:var(--body)}
+
+  /* LAYER BOXES */
+  .layers{display:grid;gap:16px;margin-top:20px}
+  @media(min-width:640px){.layers{grid-template-columns:1fr 1fr}}
+  .layer{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow-sm)}
+  .layer .tag{display:inline-block;font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:4px 10px;border-radius:6px;margin-bottom:10px}
+  .layer.l1 .tag{background:var(--lime-soft);color:#6b7000}
+  .layer.l2 .tag{background:var(--forest-soft);color:var(--forest-dark)}
+  .layer ul{list-style:none;margin-top:8px}
+  .layer li{padding-left:22px;position:relative;margin-bottom:8px;font-size:.96rem}
+  .layer li::before{content:"›";position:absolute;left:6px;color:var(--forest);font-weight:700}
+
+  /* FIGURES */
+  figure{margin:26px 0}
+  .browser{border:1px solid var(--line);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);background:#fff}
+  .browser .bar{display:flex;align-items:center;gap:7px;padding:11px 14px;background:#eef2ee;border-bottom:1px solid var(--line)}
+  .browser .dot{width:11px;height:11px;border-radius:50%;background:#cbd4cb}
+  .browser .dot.r{background:#f0a6a3}.browser .dot.y{background:#f0d28a}.browser .dot.g{background:#a7cfa9}
+  .browser .url{margin-left:10px;background:#fff;border:1px solid var(--line);border-radius:6px;padding:3px 12px;font-size:.78rem;color:var(--muted);flex:1;max-width:340px}
+  .browser img{display:block;width:100%;height:auto}
+  figcaption{margin-top:12px;font-size:.9rem;color:var(--muted);text-align:center}
+  figcaption b{color:var(--forest-dark)}
+  .ba-grid{display:grid;gap:22px}
+  @media(min-width:760px){.ba-grid{grid-template-columns:1fr 1fr;align-items:start}}
+  .ba-label{display:inline-block;font-size:.74rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--forest);margin-bottom:8px}
+
+  /* METRICS */
+  .metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:8px}
+  @media(min-width:640px){.metrics{grid-template-columns:repeat(4,1fr)}}
+  .metric{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 18px;text-align:center;box-shadow:var(--shadow-sm)}
+  .metric .n{font-size:2rem;font-weight:800;color:var(--forest);line-height:1;letter-spacing:-.02em}
+  .metric .n small{font-size:1rem;font-weight:700}
+  .metric .l{font-size:.82rem;color:var(--muted);margin-top:8px;line-height:1.4}
+
+  /* CALLOUT */
+  .callout{background:var(--forest-soft);border-radius:var(--radius);padding:24px 26px;margin-top:8px;border:1px solid #d3e2d4}
+  .callout p:last-child{margin-bottom:0}
+
+  ul.clean{list-style:none;margin-top:8px}
+  ul.clean li{padding-left:26px;position:relative;margin-bottom:10px}
+  ul.clean li::before{content:"✓";position:absolute;left:0;color:var(--ok);font-weight:800}
+
+  .stack{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .stack span{background:var(--bg-alt);border:1px solid var(--line);color:var(--body);font-size:.82rem;padding:6px 12px;border-radius:8px}
+
+  footer{background:var(--forest-dark);color:#cfe0cf;padding:44px 0;text-align:center}
+  footer .cta-row{justify-content:center}
+  footer .note{margin-top:22px;font-size:.82rem;opacity:.7}
+
+  .disclaimer{font-size:.85rem;color:var(--muted);font-style:italic;margin-top:14px}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">LLM Agent · Case Study</span>
+    <h1>An AI Budtender that never crosses a compliance line — and proves it.</h1>
+    <p class="lede">A conversational recommendation agent for a cannabis dispensary, where safety guardrails are enforced in <strong>code</strong>, not just prompts — and verified by an automated eval suite.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/Tommyz123/Cannabis-AI-Budtender" target="_blank" rel="noopener">View the code on GitHub →</a>
+      <a class="btn btn-ghost disabled" title="Live demo coming soon">▶ Live demo (coming soon)</a>
+    </div>
+  </div>
+</header>
+
+<div class="meta">
+  <div class="wrap">
+    <div><b>Role</b>Solo build — architecture, compliance design, eval &amp; full-stack</div>
+    <div><b>Domain</b>Cannabis retail · regulated AI</div>
+    <div><b>Stack</b>Python · FastAPI · OpenAI function calling · SQLite</div>
+    <div><b>Type</b>Portfolio project, built to production standards</div>
+  </div>
+</div>
+
+<!-- PROBLEM -->
+<section>
+  <div class="wrap">
+    <p class="kicker">The Problem</p>
+    <h2>Cannabis retail sits on hard legal lines.</h2>
+    <p>A recommendation assistant can't just be a friendly chatbot bolted onto GPT. The moment it says <em>"this will treat your anxiety"</em> (a medical claim), keeps serving a customer who signals they're under 21, or tells a first-timer to take a full 10&nbsp;mg edible, it crosses a compliance line that can put a dispensary's license at risk.</p>
+    <p>Most off-the-shelf chatbots have no concept of these boundaries. The real challenge wasn't <em>"make an AI that recommends products"</em> — it was <strong>"make an AI that recommends products while never crossing a compliance line, and prove it does so reliably."</strong></p>
+  </div>
+</section>
+
+<!-- MY ROLE -->
+<section class="alt">
+  <div class="wrap">
+    <p class="kicker">My Role</p>
+    <h2>I built the whole thing.</h2>
+    <div class="rolecard">
+      <dl>
+        <dt>Architecture</dt><dd>Two-layer compliance design, tool-calling agent loop, retrieval strategy</dd>
+        <dt>Engineering</dt><dd>FastAPI backend, embeddable vanilla-JS chat widget, 217-product SQLite catalog</dd>
+        <dt>Reliability</dt><dd>Golden-dataset eval framework, 148 unit/integration tests, Langfuse observability</dd>
+        <dt>Judgment</dt><dd>Right-sized the retrieval layer (structured SQL over vector RAG), decided where to force determinism vs. trust the model</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<!-- APPROACH: THE HARD PART -->
+<section>
+  <div class="wrap">
+    <p class="kicker">The Hard Part</p>
+    <h2>Compliance enforced in code — not a hopeful sentence in a prompt.</h2>
+    <p>The differentiator isn't the chatbot; it's that <strong>safety is a two-layer system.</strong> A prompt can be jailbroken or drift; the code layer can't.</p>
+    <div class="layers">
+      <div class="layer l1">
+        <span class="tag">Layer 1 · Prompt modules</span>
+        <p>Four independent, individually-editable compliance modules, injected at highest priority:</p>
+        <ul>
+          <li>Medical-claim protection — bans therapeutic verbs ("alleviate / relieve")</li>
+          <li>Age verification — hard block on any under-21 signal</li>
+          <li>Non-consensual-use refusal</li>
+          <li>Beginner safety — dosage limits + mandatory "start low, go slow"</li>
+        </ul>
+      </div>
+      <div class="layer l2">
+        <span class="tag">Layer 2 · Hard enforcement in code</span>
+        <p>Doesn't rely on the model behaving:</p>
+        <ul>
+          <li>Medical queries hit a router classifier that returns <code>tool_choice="none"</code> — the model is <strong>structurally forbidden</strong> from recommending products</li>
+          <li>Beginner safety is a numeric hard filter at the data layer: edibles ≤5&nbsp;mg, flower ≤20% THC, vaporizers ≤70% — applied session-wide, can't be forgotten mid-chat</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:22px">This "prompt + code" belt-and-suspenders design is exactly what compliance-sensitive domains — finance, healthcare, legal — require. It's what separates a demo from something a regulated business could actually run.</p>
+  </div>
+</section>
+
+<!-- PROOF: COMPLIANCE IN ACTION -->
+<section class="alt">
+  <div class="wrap">
+    <p class="kicker">See It Work · Compliance Guardrails</p>
+    <h2>The guardrails, caught in the act.</h2>
+    <p>Real conversations against the live catalog. Each reply below is driven by the guardrail code above — not scripted for the screenshot.</p>
+
+    <figure>
+      <div class="browser">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">verdant-dispensary.demo / ai-budtender</span></div>
+        <img src="screenshots/01_compliance_medical_claim_block.png" alt="Customer asks if anything can treat their anxiety; the assistant declines the medical claim and pivots to a compliant suggestion.">
+      </div>
+      <figcaption><b>Guardrail #1 — Medical-claim protection.</b> Customer: "Do you have anything that can treat my anxiety?" → The assistant refuses to make a medical claim ("I can't offer medical advice…") and pivots to a compliant, effect-based suggestion. Enforced in code via <code>tool_choice="none"</code>.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="browser">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">verdant-dispensary.demo / ai-budtender</span></div>
+        <img src="screenshots/02_compliance_age_block.png" alt="Customer says they are 19; the assistant hard-blocks and refuses to make any recommendation.">
+      </div>
+      <figcaption><b>Guardrail #2 — Age verification.</b> Customer signals they're under 21 → the assistant hard-blocks: "cannabis products are only available to customers aged 21 and older." No product is recommended. A refusal, not a soft redirect.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- SOLUTION: CONVERSATION-DRIVEN UI -->
+<section>
+  <div class="wrap">
+    <p class="kicker">See It Work · Conversation-Driven UI</p>
+    <h2>One sentence reshapes the whole storefront.</h2>
+    <p>The customer doesn't click through filters. They say what they want in plain language, and the page reorganizes itself around them.</p>
+    <div class="ba-grid">
+      <div>
+        <span class="ba-label">Before</span>
+        <div class="browser">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <img src="screenshots/03_storefront_before.png" alt="The full storefront: 217 products across 8 categories with a filters sidebar and product grid.">
+        </div>
+      </div>
+      <div>
+        <span class="ba-label">After one sentence</span>
+        <div class="browser">
+          <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+          <img src="screenshots/04_conversation_driven_after.png" alt="After the customer types one request, the page narrows to 36 of 217 products, auto-applies filter chips, and populates a Best Matches row.">
+        </div>
+      </div>
+    </div>
+    <figcaption style="margin-top:16px">The customer types <b>"I want something relaxing for sleep — edibles, under $30."</b> The page reshapes: <b>217 → 36 of 217</b>, four filter chips auto-apply (Edibles · Relaxed · Sleepy · Under&nbsp;$30), and a <b>✨ Best Matches for You</b> row appears. The chat below recommends the same products.</figcaption>
+  </div>
+</section>
+
+<!-- CONSISTENCY GUARANTEE -->
+<section class="alt">
+  <div class="wrap">
+    <p class="kicker">A Detail Worth Highlighting</p>
+    <h2>What it recommends == what it displays — by construction.</h2>
+    <figure>
+      <div class="browser">
+        <div class="bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="url">verdant-dispensary.demo</span></div>
+        <img src="screenshots/05_best_matches_row.png" alt="A row of Best Matches product cards, each with name, price, THC and a per-card reason.">
+      </div>
+      <figcaption><b>The Best Matches cards render the exact list the assistant names in chat.</b></figcaption>
+    </figure>
+    <div class="callout">
+      <p>The cards and the products the assistant recommends in prose are built from <strong>one</strong> backend-chosen list — the top of the retrieved set, padded from the same category to a 3–6 minimum and labeled "Similar option" when a strict search returns fewer. The assistant is <em>instructed</em> to recommend exactly that list, and the cards render exactly that list.</p>
+      <p>So "what it recommends == what it displays" is true <strong>by construction</strong>, not by after-the-fact text matching. This replaced an earlier prose-scanning approach that could mis-attribute products sharing a brand prefix — a subtle correctness bug I found and designed out.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PROVING IT WORKS: EVAL -->
+<section>
+  <div class="wrap">
+    <p class="kicker">Proving It Works</p>
+    <h2>Eval-driven development, not "it worked when I tried it."</h2>
+    <p>The project ships with a golden-dataset eval framework that validates conversation quality end-to-end — <strong>31 eval cases across 7 dimensions</strong> (compliance, information-gathering, recommendation-refinement, fallback, multi-turn context, anti-hallucination, intent-switch), including P0 regression guards. Grading is hybrid: deterministic rule checks <em>plus</em> an LLM-as-judge (DeepSeek) scoring each turn against per-case criteria. Runs trace to <strong>Langfuse</strong>; non-zero exit on failure means it's CI-ready.</p>
+    <div class="metrics">
+      <div class="metric"><div class="n">6/6</div><div class="l">Compliance dimension passes <b>every run</b> (100%)</div></div>
+      <div class="metric"><div class="n">~95<small>%</small></div><div class="l">Overall — ≈30–31 of 31 across all dimensions</div></div>
+      <div class="metric"><div class="n">148</div><div class="l">Unit/integration tests, offline, no API key</div></div>
+      <div class="metric"><div class="n">217</div><div class="l">Real products · 8 categories in the catalog</div></div>
+    </div>
+    <p class="disclaimer">The compliance dimension — the guardrails that matter most — passes 6/6 on every single run. The overall suite occasionally flips one non-compliance case, which is why it's stated as a range, not a perfect score. Honesty over a rounded-up number.</p>
+  </div>
+</section>
+
+<!-- ENGINEERING JUDGMENT -->
+<section class="alt">
+  <div class="wrap">
+    <p class="kicker">An Engineering Judgment Call</p>
+    <h2>Right-sizing the tool to the problem.</h2>
+    <p>The catalog is 217 structured records. I evaluated vector/embedding retrieval and <strong>deliberately chose structured SQL + multi-criteria filtering instead</strong> — for this data size and shape it's faster, more precise, and fully controllable, with none of the overhead or fuzziness of a vector store. <em>Not reaching for the heaviest option because it's fashionable.</em> (For a larger unstructured knowledge base, vector RAG would be the right call — and the architecture cleanly supports swapping the retrieval layer.)</p>
+    <p>The same judgment applies to reliability: <strong>critical compliance paths are enforced deterministically in code, while non-critical paths route the model toward a tool call and accept its probabilistic nature.</strong> Knowing where to force determinism vs. where to trust the model is the real skill.</p>
+  </div>
+</section>
+
+<!-- TRANSFERABLE -->
+<section>
+  <div class="wrap">
+    <p class="kicker">Why This Matters Beyond Cannabis</p>
+    <h2>Nothing here is cannabis-specific.</h2>
+    <p>The same approach applies to any regulated or grounded-AI use case:</p>
+    <ul class="clean">
+      <li><strong>Building real LLM agents</strong> — tool-calling loops, function calling, latency/cost optimization (fast-path bypass for greetings)</li>
+      <li><strong>Turning soft policy into hard, code-level constraints</strong> — critical for finance / healthcare / legal AI</li>
+      <li><strong>Eval-driven development</strong> — rule checks + LLM-as-judge + observability, the workflow senior LLM engineers use to ship reliably</li>
+      <li><strong>Pragmatic architecture</strong> — layered single-responsibility modules, right-sized technology choices, clean documented code</li>
+    </ul>
+    <div class="stack">
+      <span>Python 3.12</span><span>FastAPI</span><span>OpenAI function calling</span><span>SQLite</span><span>Pydantic</span><span>Pytest</span><span>DeepSeek (LLM judge)</span><span>Langfuse</span><span>Vanilla JS widget</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <h2 style="color:#fff">Want the details?</h2>
+    <p style="color:#cfe0cf;max-width:52ch;margin:10px auto 24px">The full source, eval framework, and test suite are on GitHub. A live interactive demo is on the way.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/Tommyz123/Cannabis-AI-Budtender" target="_blank" rel="noopener">View the code on GitHub →</a>
+      <a class="btn btn-ghost disabled" title="Live demo coming soon">▶ Live demo (coming soon)</a>
+    </div>
+    <p class="note">A portfolio project built to production standards — layered architecture, CI-ready eval, full test suite. Not a live commercial deployment.</p>
+  </div>
+</footer>
+
+</body>
+</html>

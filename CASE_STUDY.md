@@ -46,7 +46,7 @@ The project ships with a **golden-dataset eval framework** that validates conver
 - **Hybrid grading:** deterministic rule checks (was the right tool called? were forbidden params avoided?) **plus** an LLM-as-judge (DeepSeek) that scores each turn against per-case criteria.
 - **Results:** the **compliance dimension passes 6/6 (100%) every run** — the guardrails that matter most are rock-solid. Overall the suite clears **~30–31 of 31 (≈95%+)** across all dimensions.
 - **Observability:** eval runs trace to **Langfuse** for scoring and inspection; non-zero exit on failure means it's CI-ready.
-- **144 unit/integration tests** that mock the LLM client and run offline in seconds — reproducible on any machine without an API key.
+- **148 unit/integration tests** that mock the LLM client and run offline in seconds — reproducible on any machine without an API key.
 
 ---
 
@@ -62,7 +62,7 @@ The same judgment applies to reliability: **critical compliance paths are enforc
 
 - ✅ **Compliance dimension: 6/6 (100%) every run** — the guardrails that matter most never fail
 - ✅ **~30–31/31 (≈95%+)** overall across 7 eval dimensions
-- ✅ **144/144** unit/integration tests passing (offline, no API key required)
+- ✅ **148/148** unit/integration tests passing (offline, no API key required)
 - ✅ Compliance enforced at both prompt and code layers, verified by dedicated eval cases
 - ✅ Full working product — FastAPI backend + embeddable widget + live 217-product catalog
 
@@ -104,7 +104,7 @@ Python 3.12 · FastAPI · OpenAI function calling (`gpt-4o-mini`) · SQLite · P
 这套"提示词+代码"双保险正是合规敏感领域（金融/医疗/法律）所需，也是"demo"和"受监管企业真能跑的东西"的分界。
 
 ## 证明它有效——eval 驱动开发
-本项目自带 golden-dataset eval 框架，端到端验证对话质量：**31 个 eval 用例**覆盖 7 个维度（合规/信息收集/推荐优化/兜底/多轮上下文/防幻觉/意图切换），含幻觉与意图冲突的 **P0 回归守卫**；混合评分=确定性规则检查 + LLM 裁判（DeepSeek）逐条打分；可观测性接 **Langfuse**，失败非零退出=可进 CI；**144 个单元/集成测试**（mock LLM，秒级离线跑，无需 API key 即可复现）。**结果：合规维度每次跑都 6/6（100%）——最要紧的护栏永不失手；整体约 30-31/31（≈95%+）覆盖全部维度。**
+本项目自带 golden-dataset eval 框架，端到端验证对话质量：**31 个 eval 用例**覆盖 7 个维度（合规/信息收集/推荐优化/兜底/多轮上下文/防幻觉/意图切换），含幻觉与意图冲突的 **P0 回归守卫**；混合评分=确定性规则检查 + LLM 裁判（DeepSeek）逐条打分；可观测性接 **Langfuse**，失败非零退出=可进 CI；**148 个单元/集成测试**（mock LLM，秒级离线跑，无需 API key 即可复现）。**结果：合规维度每次跑都 6/6（100%）——最要紧的护栏永不失手；整体约 30-31/31（≈95%+）覆盖全部维度。**
 
 ## 一个值得强调的工程判断
 商品库 217 条结构化数据。我评估了向量/embedding 检索，**刻意选择结构化 SQL + 多条件过滤**——就这个数据量和结构而言更快、更精准、完全可控，没有向量库的开销和模糊性。*按问题选型，不为赶时髦上最重的工具。*（若换成更大的非结构化知识库，向量 RAG 才是对的选择——架构也干净地支持替换检索层。）
@@ -112,7 +112,7 @@ Python 3.12 · FastAPI · OpenAI function calling (`gpt-4o-mini`) · SQLite · P
 同样的判断也用在可靠性上：**关键合规路径用代码强制确定性，非关键路径则把模型引向工具调用、接受它的概率本性**——知道何处该强制确定性、何处该信任模型，才是真本事。
 
 ## 成果
-✅ **合规维度每次跑 6/6（100%）**——最要紧的护栏永不失手 ✅ **整体约 30-31/31（≈95%+）** 覆盖 7 个 eval 维度 ✅ 144/144 测试全过（离线、无需 API key） ✅ 合规双层强制且有专门 eval 验证 ✅ 完整可运行产品（FastAPI 后端 + 可嵌入挂件 + 217 商品实时库）
+✅ **合规维度每次跑 6/6（100%）**——最要紧的护栏永不失手 ✅ **整体约 30-31/31（≈95%+）** 覆盖 7 个 eval 维度 ✅ 148/148 测试全过（离线、无需 API key） ✅ 合规双层强制且有专门 eval 验证 ✅ 完整可运行产品（FastAPI 后端 + 可嵌入挂件 + 217 商品实时库）
 
 ## 这证明的可迁移能力（都不限大麻）
 构建真实 LLM agent（tool-calling/function calling/延迟成本优化）；把软性政策要求变成代码级硬约束（金融/医疗/法律 AI 关键）；eval 驱动开发（规则+LLM裁判+可观测，资深 LLM 工程师的可靠交付流程）；务实架构（分层单一职责、按需选型、代码整洁有文档）。
