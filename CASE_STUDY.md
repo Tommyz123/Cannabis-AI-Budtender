@@ -52,7 +52,9 @@ The project ships with a **golden-dataset eval framework** that validates conver
 
 ## An Engineering Judgment Call Worth Highlighting
 
-The catalog is 217 structured records. I evaluated vector/embedding retrieval and **deliberately chose structured SQL + multi-criteria filtering instead** — for this data size and shape it's faster, more precise, and fully controllable, with none of the overhead or fuzziness of a vector store. *Right-sizing the tool to the problem, not reaching for the heaviest option because it's fashionable.* (For a larger unstructured knowledge base, vector RAG would be the correct call — and the architecture cleanly supports swapping the retrieval layer.)
+The catalog is 217 structured records with well-defined fields (category, strain, effects, THC, price). I evaluated the obvious alternative — embedding every product and doing **vector similarity retrieval** — and **deliberately chose structured SQL + multi-criteria filtering instead.** For this data size and shape, exact predicates (`THC ≤ 20%`, `price < $30`, category = edibles) are faster, exact, and fully controllable — where cosine similarity over embeddings would be fuzzy, harder to debug, and would fight the hard numeric compliance filters. *The goal was recommendation accuracy and controllability — not demonstrating a particular retrieval pattern.*
+
+To be clear about the trade-off: **vector RAG is the right call when the source is large and unstructured** — a document corpus where you chunk, embed, and retrieve by semantic meaning because there are no clean fields to filter on (e.g. a legal/policy knowledge base answering open-ended questions). This catalog is the opposite: small, structured, query-by-attribute. Knowing *which* problem you have is the skill — and the retrieval layer is cleanly isolated, so swapping in a vector store is a contained change if the data ever outgrows SQL.
 
 The same judgment applies to reliability: **critical compliance paths are enforced deterministically in code, while non-critical paths route the model toward a tool call and accept its probabilistic nature** — knowing where to force determinism vs. where to trust the model is the real skill.
 
@@ -107,7 +109,9 @@ Python 3.12 · FastAPI · OpenAI function calling (`gpt-4o-mini`) · SQLite · P
 本项目自带 golden-dataset eval 框架，端到端验证对话质量：**31 个 eval 用例**覆盖 7 个维度（合规/信息收集/推荐优化/兜底/多轮上下文/防幻觉/意图切换），含幻觉与意图冲突的 **P0 回归守卫**；混合评分=确定性规则检查 + LLM 裁判（DeepSeek）逐条打分；可观测性接 **Langfuse**，失败非零退出=可进 CI；**148 个单元/集成测试**（mock LLM，秒级离线跑，无需 API key 即可复现）。**结果：合规维度每次跑都 6/6（100%）——最要紧的护栏永不失手；整体约 30-31/31（≈95%+）覆盖全部维度。**
 
 ## 一个值得强调的工程判断
-商品库 217 条结构化数据。我评估了向量/embedding 检索，**刻意选择结构化 SQL + 多条件过滤**——就这个数据量和结构而言更快、更精准、完全可控，没有向量库的开销和模糊性。*按问题选型，不为赶时髦上最重的工具。*（若换成更大的非结构化知识库，向量 RAG 才是对的选择——架构也干净地支持替换检索层。）
+商品库 217 条结构化数据，字段清晰（品类/品系/效果/THC/价格）。我评估了显而易见的替代方案——把每个商品 embedding 后做**向量相似度检索**——并**刻意选择结构化 SQL + 多条件过滤**。就这个数据量和结构而言，精确谓词（`THC ≤ 20%`、`价格 < $30`、品类=食用）更快、精确、完全可控；而 embedding 上的余弦相似度会模糊、更难调试、还会和数值型合规硬过滤打架。*目标是推荐的准确性和可控性，不是展示某种检索模式。*
+
+把取舍说清楚：**向量 RAG 是对的选择——当数据源大而非结构化时**：一堆文档，你需要 chunk、embedding、按语义检索，因为没有干净字段可过滤（比如回答开放式问题的法律/政策知识库）。而这个商品库正相反：小、结构化、按属性查询。**知道自己面对的是哪种问题才是真本事**——且检索层干净隔离，将来数据涨大了要换向量库是可控改动。
 
 同样的判断也用在可靠性上：**关键合规路径用代码强制确定性，非关键路径则把模型引向工具调用、接受它的概率本性**——知道何处该强制确定性、何处该信任模型，才是真本事。
 
