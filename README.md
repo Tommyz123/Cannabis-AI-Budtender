@@ -1,6 +1,18 @@
 # AI Budtender
 
-An embeddable AI chat widget that helps cannabis dispensary customers find the right product through multi-turn conversation — with built-in safety guardrails for first-time users.
+An embeddable AI chat widget that helps cannabis dispensary customers find the right product through multi-turn conversation — with compliance guardrails enforced in **code**, not just prompts, and proven by an automated eval suite.
+
+> 📄 **[Read the full case study →](https://tommyz123.github.io/Cannabis-AI-Budtender/)** — the design story, compliance architecture, and screenshots, in one page.
+
+**At a glance:**
+
+- ✅ **Compliance dimension passes 6/6 (100%) on every eval run** — the guardrails that matter most never fail
+- ✅ **Overall ≈30–31 / 31 eval cases (~95%+)** across 7 dimensions
+- ✅ **148 unit/integration tests** passing, offline, no API key required
+- 🛡️ Compliance enforced at **two layers** — prompt modules *and* hard code-level constraints (`tool_choice="none"` on medical queries, numeric beginner-safety filters)
+- 🧩 Tool-calling agent loop over a **217-product, 8-category** live catalog
+
+See the [case study](https://tommyz123.github.io/Cannabis-AI-Budtender/) for the full write-up, or [`CASE_STUDY.md`](CASE_STUDY.md) for the source text.
 
 ---
 
@@ -200,9 +212,13 @@ source venv/bin/activate
 python eval/run_eval.py
 ```
 
-Test cases are defined in `golden_dataset_v2.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Results are logged to `reports/` and optionally to Langfuse for tracing.
+Test cases are defined in `golden_dataset_v2.json`. Each case specifies a conversation scenario, pass/fail rules, and grading criteria. Grading is hybrid — deterministic rule checks *plus* an LLM-as-judge (DeepSeek). Results are logged to `reports/` and optionally to Langfuse for tracing.
 
-Current coverage: **31 test cases** (31/31 passing):
+> **Two different numbers, don't conflate them:** the **31 eval cases** below validate end-to-end *conversation quality* (via LLM-judge). Separately, the repo has **148 unit/integration tests** (`tests/`) that mock the LLM and run offline in seconds.
+
+Current results: the **compliance dimension passes 6/6 (100%) on every run**; overall the suite clears **≈30–31 of 31 (~95%+)** — stated as a range because a single non-compliance case occasionally flips (honesty over a rounded-up score).
+
+Coverage — **31 eval cases** across 7 dimensions:
 
 | Direction | TCs | Description |
 |---|---|---|
