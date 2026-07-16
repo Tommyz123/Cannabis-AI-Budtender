@@ -1,5 +1,7 @@
 # AI Budtender
 
+[![CI](https://github.com/Tommyz123/Cannabis-AI-Budtender/actions/workflows/ci.yml/badge.svg)](https://github.com/Tommyz123/Cannabis-AI-Budtender/actions/workflows/ci.yml)
+
 An embeddable AI chat widget that helps cannabis dispensary customers find the right product through multi-turn conversation — with compliance guardrails enforced in **code**, not just prompts, and proven by an automated eval suite.
 
 > 📄 **[Read the full case study →](https://tommyz123.github.io/Cannabis-AI-Budtender/)** — the design story, compliance architecture, and screenshots, in one page.
