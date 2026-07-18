@@ -24,6 +24,16 @@ A conversational recommendation agent for a dispensary storefront:
 
 ---
 
+## What this means for a dispensary
+
+- **Staff time back.** Budtenders stop fielding "what do you have for relaxing that isn't too strong?" lookups — customers self-serve against the full catalog, staff handle the sales that need a human.
+- **217 products down to a shortlist in a few turns.** The agent narrows by effect, occasion, and form instead of making customers scroll a menu.
+- **Recommendations come with reasons.** Each suggestion shows what it's based on — customers see *why*, which builds trust in the store, not just the bot.
+- **Lower compliance exposure.** Medical claims, under-21 signals, and beginner-overdose risks are blocked in code — reducing the risk that a chatbot conversation endangers the license.
+- **Drops into a real store.** The widget embeds with one script tag, and the catalog layer reads structured product data — pointing it at a live dispensary catalog is a contained change.
+
+---
+
 ## The Hard Part — Compliance Enforced in Code
 
 The differentiator isn't the chatbot; it's that **safety is a two-layer system, not a hopeful sentence in a prompt.**
@@ -98,6 +108,13 @@ Python 3.12 · FastAPI · OpenAI function calling (`gpt-4o-mini`) · SQLite · P
 
 ## 我做了什么
 面向门店的对话式推荐 agent：多轮对话收集两个信号（想要的效果/场景 + 消费形式），一次问一个、以专业口吻引导；tool-calling agent 循环（OpenAI function calling）查询 **217 款 8 类** 真实商品库，让模型基于真实库存推理而非编造；即插即用聊天挂件（原生 HTML/CSS/JS，无需构建），一个 `<script>` 标签嵌入任何页面。
+
+## 对门店意味着什么
+- **把员工时间还回来**：顾客对全量商品库自助筛选，"有什么放松又不太猛的"这类查询不再占用店员，人力留给需要真人的成交环节
+- **217 件商品几轮对话缩到一个短名单**：按效果/场景/形式收敛，不让顾客刷菜单
+- **推荐带依据**：每个建议显示它基于什么——顾客看得到"为什么"，信任落在店上而不只是机器人上
+- **降低合规暴露**：医疗声明/未满21信号/新手过量风险在代码层被拦——减少一段聊天危及牌照的可能
+- **能进真门店**：挂件一个 script 标签嵌入，商品层读结构化数据——接入真实 dispensary catalog 是可控改动
 
 ## 最难的部分——合规用代码强制
 差异化不在聊天本身，而在**安全是双层系统，不是提示词里一句祈祷**。
