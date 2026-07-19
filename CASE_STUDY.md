@@ -70,6 +70,14 @@ The same judgment applies to reliability: **critical compliance paths are enforc
 
 ---
 
+## Determinism as a UI Contract — the Consistency Guardrail
+
+A subtle bug surfaced in real testing: the chat prose named one set of products while the UI cards rendered another (a fuzzy product-name match colliding across brands). Rather than patch the matcher, I removed the bug's precondition: **the backend now deterministically selects the 3–6 recommendations, and both the model's prose and the UI cards render from that single list** — chat and cards physically cannot disagree. Thin result sets are backfilled to a minimum of three by category and honestly labeled "Similar option"; zero real matches stay zero — no fabricated results.
+
+The guarantee is verified at the DOM level: the screenshot pipeline reads card names and chat text from the same live DOM and asserts every card is named in the conversation — assets only ship on `allConsistent: true`. All 148 tests and the 6/6 compliance eval held through the refactor.
+
+---
+
 ## Results
 
 - ✅ **Compliance dimension: 6/6 (100%) every run** — the guardrails that matter most never fail
@@ -131,6 +139,9 @@ Python 3.12 · FastAPI · OpenAI function calling (`gpt-4o-mini`) · SQLite · P
 把取舍说清楚：**向量 RAG 是对的选择——当数据源大而非结构化时**：一堆文档，你需要 chunk、embedding、按语义检索，因为没有干净字段可过滤（比如回答开放式问题的法律/政策知识库）。而这个商品库正相反：小、结构化、按属性查询。**知道自己面对的是哪种问题才是真本事**——且检索层干净隔离，将来数据涨大了要换向量库是可控改动。
 
 同样的判断也用在可靠性上：**关键合规路径用代码强制确定性，非关键路径则把模型引向工具调用、接受它的概率本性**——知道何处该强制确定性、何处该信任模型，才是真本事。
+
+## 确定性一致性护栏——把"嘴上说的"和"卡片摆的"锁成一份
+真实测试暴露的 bug：聊天文字点名一组产品、UI 卡片却摆出另一组（模糊品名匹配跨品牌撞名）。我没有修补匹配器，而是消灭这类 bug 的存在条件：**后端确定性选出 3-6 个推荐，模型照单念、卡片照单摆**——同一份清单，文字和卡片物理上不可能不一致。结果太少时按品类补齐到 3 张并诚实标注"Similar option"；真零结果保持零，不造假。验证做到 DOM 级：截图脚本从同一 live DOM 读卡名和聊天文字，断言每张卡都在对话中被点名，`allConsistent: true` 才出图。重构后 148 测试全过、合规 eval 保持 6/6。
 
 ## 成果
 ✅ **合规维度每次跑 6/6（100%）**——最要紧的护栏永不失手 ✅ **整体约 30-31/31（≈95%+）** 覆盖 7 个 eval 维度 ✅ 148/148 测试全过（离线、无需 API key） ✅ 合规双层强制且有专门 eval 验证 ✅ 完整可运行产品（FastAPI 后端 + 可嵌入挂件 + 217 商品实时库）
